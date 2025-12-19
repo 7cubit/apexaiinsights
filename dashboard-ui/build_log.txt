@@ -1,0 +1,21 @@
+
+> dashboard-ui@0.0.0 build
+> tsc -b && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 4 modules transformed.
+x Build failed in 367ms
+error during build:
+[vite:css] [postcss] Unexpected token, expected ";" (54:2)
+file: /Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/src/index.css:undefined:NaN
+    at unexpected (/Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/node_modules/sucrase/dist/parser/traverser/util.js:99:15)
+    at semicolon (/Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/node_modules/sucrase/dist/parser/traverser/util.js:77:5)
+    at parseExportDefaultExpression (/Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/node_modules/sucrase/dist/parser/traverser/statement.js:1025:21)
+    at parseExport (/Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/node_modules/sucrase/dist/parser/traverser/statement.js:988:5)
+    at parseStatementContent (/Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/node_modules/sucrase/dist/parser/traverser/statement.js:200:9)
+    at parseStatement (/Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/node_modules/sucrase/dist/parser/traverser/statement.js:116:3)
+    at parseBlockBody (/Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/node_modules/sucrase/dist/parser/traverser/statement.js:586:5)
+    at parseTopLevel (/Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/node_modules/sucrase/dist/parser/traverser/statement.js:92:3)
+    at parseFile (/Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/node_modules/sucrase/dist/parser/traverser/index.js:17:35)
+    at parse (/Users/davidbalan86gmail.com/Apex AI Insights/dashboard-ui/node_modules/sucrase/dist/parser/index.js:26:35)

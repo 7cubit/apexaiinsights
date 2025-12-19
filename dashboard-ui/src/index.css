@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 10 10 10;
+    --foreground: 255 255 255;
+  }
+
+  /* Scope to the app container inside WP Admin */
+  #apex-dashboard-root {
+    @apply bg-midnight text-white antialiased selection:bg-neon-green/30 selection:text-white min-h-screen font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Reset WordPress/Browser Defaults */
+  #apex-dashboard-root input,
+  #apex-dashboard-root button,
+  #apex-dashboard-root select,
+  #apex-dashboard-root textarea {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    outline: none;
+    margin: 0;
+    padding: 0;
+    font-family: inherit;
+    color: inherit;
+  }
+
+  #apex-dashboard-root button {
+    cursor: pointer;
+    background: none;
+  }
+
+  /* Custom Scrollbar scoped */
+  #apex-dashboard-root ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  #apex-dashboard-root ::-webkit-scrollbar-track {
+    @apply bg-midnight;
+  }
+
+  #apex-dashboard-root ::-webkit-scrollbar-thumb {
+    @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/5 backdrop-blur-md border border-white/10 shadow-glass;
+  }
+
+  .glass-card {
+    @apply glass rounded-2xl p-6 hover:border-white/20 transition-all duration-500 hover:shadow-neon-purple/5;
+  }
+
+  .text-gradient-neon {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-neon-green to-neon-blue;
+  }
+
+  .glow-green {
+    box-shadow: 0 0 20px rgba(0, 242, 234, 0.15);
+  }
+
+  .glow-purple {
+    box-shadow: 0 0 20px rgba(112, 0, 255, 0.15);
+  }
+
+  .flex-center {
+    @apply flex items-center justify-center;
+  }
+}

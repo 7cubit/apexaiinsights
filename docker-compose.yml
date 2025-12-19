@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # 1. Database
+  db:
+    image: mysql:8.0
+    container_name: apex-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: password
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - apex-net
+
+  # 2. Redis (Cache)
+  redis:
+    image: redis:alpine
+    container_name: apex-redis
+    restart: always
+    networks:
+      - apex-net
+
+  # 3. WordPress (with Woo support)
+  wordpress:
+    image: wordpress:latest
+    container_name: apex-wp
+    restart: always
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8001:80"
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: password
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DEBUG: 1
+    volumes:
+      - wp_data:/var/www/html
+      - ./plugin-core:/var/www/html/wp-content/plugins/apex-ai-insights
+    networks:
+      - apex-net
+
+  # 4. Apex Intelligence Engine (Go)
+  apex-engine:
+    build:
+      context: ./engine-go
+      dockerfile: Dockerfile
+    container_name: apex-engine
+    restart: always
+    depends_on:
+      - db
+    environment:
+      DB_USER: wordpress
+      DB_PASS: password
+      DB_HOST: db
+      DB_NAME: wordpress
+      PORT: 8080
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY}
+      EMAILIT_API_KEY: ${EMAILIT_API_KEY}
+    networks:
+      - apex-net
+
+  # 5. Dashboard UI (React)
+  # In dev, we usually run this locally, but for preview we can build a static image
+  # For this simple preview, we'll assume it's running on host or use a node container
+  dashboard-ui:
+    image: node:20-alpine
+    container_name: apex-dashboard
+    working_dir: /app
+    volumes:
+      - ./dashboard-ui:/app
+    command: sh -c "npm install && npm run dev -- --host"
+    ports:
+      - "5173:5173"
+    networks:
+      - apex-net
+
+networks:
+  apex-net:
+    driver: bridge
+
+volumes:
+  db_data:
+  wp_data:
