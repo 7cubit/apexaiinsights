@@ -123,7 +123,8 @@ func (h *AutomationHandler) executeAction(actionType string, config json.RawMess
 	}
 	json.Unmarshal(config, &actionCfg)
 
-	if actionType == "email" {
+	switch actionType {
+	case "email":
 		// Use EmailIt API
 		apiKey := os.Getenv("EMAILIT_API_KEY")
 		if apiKey == "" {
@@ -138,9 +139,10 @@ func (h *AutomationHandler) executeAction(actionType string, config json.RawMess
 			log.Printf("EmailIt Sent to %s", actionCfg.Email)
 		}
 
-	} else if actionType == "webhook" {
+	case "webhook":
 		http.Post(actionCfg.Url, "application/json", bytes.NewBuffer(payload))
-	} else if actionType == "notice" {
+
+	case "notice":
 		// For notices, we might store them in DB for PHP to fetch on next load
 		// OR call notification API
 		// IMPLEMENTATION: Maybe just log it for now

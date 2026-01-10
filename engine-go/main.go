@@ -37,6 +37,9 @@ func main() {
 		// Run Schema Migration
 		repo.Migrate()
 
+		// Initialize GDPR Manager with database connection
+		InitGDPRManager(repo.GetDB())
+
 		// Initialize Apex Recon Engine
 		// Assuming files are mapped to /app/data or similar in Docker
 		reconEngine, err := recon.NewReconEngine("data/GeoLite2-ASN.mmdb", "data/blacklist.json")
@@ -50,6 +53,8 @@ func main() {
 		SetupCollectEndpoint(app, repo, reconEngine)
 		// Setup Chat AI endpoint
 		SetupChatEndpoint(app, repo)
+		// Setup GA4 Integration endpoints
+		SetupGA4Endpoints(app, repo)
 
 		// Setup Prediction endpoint
 		predictionHandler := NewPredictionHandler()
@@ -121,7 +126,7 @@ func main() {
 
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		secret = "change_me_to_something_secure"
+		log.Fatal("FATAL: JWT_SECRET environment variable is required. Set it in your .env file.")
 	}
 
 	// JWT Handshake endpoint (Task 5)
@@ -222,6 +227,11 @@ func main() {
 	debug.Get("/license", healthHandler.LicenseHandshake)
 
 	debug.Get("/update", AutoUpdateHandler)
+
+	// Demo Data Seeder (BUG-001: Empty State fix)
+	seederHandler := NewDemoSeederHandler(repo)
+	system := app.Group("/v1/system")
+	system.Post("/seed", seederHandler.SeedDemoData)
 
 	log.Fatal(app.Listen(":" + port))
 }

@@ -1,9 +1,11 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from 'recharts';
 import { useState } from 'react';
+import { Activity, Zap } from 'lucide-react';
 
 interface TrafficData {
     time: string;
     visitors: number;
+    ga4Users: number; // Added GA4 data
     gscImpressions?: number;
     gscClicks?: number;
 }
@@ -12,123 +14,197 @@ interface TrafficChartProps {
     range?: string;
 }
 
+type ChartMode = 'apex' | 'ga4' | 'hybrid';
+
 const getDataForRange = (range: string): TrafficData[] => {
+    // Mock data with "Truth Gap" logic: Apex always detects more (recovered ad-block)
+    const factor = 0.85; // GA4 typically sees 15% less
+    
     switch (range) {
         case '30d':
             return [
-                { time: 'Week 1', visitors: 2400, gscImpressions: 8000, gscClicks: 240 },
-                { time: 'Week 2', visitors: 3200, gscImpressions: 11000, gscClicks: 310 },
-                { time: 'Week 3', visitors: 2800, gscImpressions: 9500, gscClicks: 280 },
-                { time: 'Week 4', visitors: 4500, gscImpressions: 15000, gscClicks: 420 },
+                { time: 'Week 1', visitors: 2400, ga4Users: Math.floor(2400 * factor), gscImpressions: 8000, gscClicks: 240 },
+                { time: 'Week 2', visitors: 3200, ga4Users: Math.floor(3200 * factor), gscImpressions: 11000, gscClicks: 310 },
+                { time: 'Week 3', visitors: 2800, ga4Users: Math.floor(2800 * factor), gscImpressions: 9500, gscClicks: 280 },
+                { time: 'Week 4', visitors: 4500, ga4Users: Math.floor(4500 * factor), gscImpressions: 15000, gscClicks: 420 },
             ];
         case '90d':
             return [
-                { time: 'Month 1', visitors: 12000, gscImpressions: 45000, gscClicks: 1200 },
-                { time: 'Month 2', visitors: 15000, gscImpressions: 55000, gscClicks: 1600 },
-                { time: 'Month 3', visitors: 22000, gscImpressions: 75000, gscClicks: 2100 },
+                { time: 'Month 1', visitors: 12000, ga4Users: Math.floor(12000 * factor), gscImpressions: 45000, gscClicks: 1200 },
+                { time: 'Month 2', visitors: 15000, ga4Users: Math.floor(15000 * factor), gscImpressions: 55000, gscClicks: 1600 },
+                { time: 'Month 3', visitors: 22000, ga4Users: Math.floor(22000 * factor), gscImpressions: 75000, gscClicks: 2100 },
             ];
         default: // 7d
             return [
-                { time: 'Mon', visitors: 820, gscImpressions: 2400, gscClicks: 72 },
-                { time: 'Tue', visitors: 932, gscImpressions: 2800, gscClicks: 84 },
-                { time: 'Wed', visitors: 901, gscImpressions: 2600, gscClicks: 78 },
-                { time: 'Thu', visitors: 934, gscImpressions: 3100, gscClicks: 92 },
-                { time: 'Fri', visitors: 1290, gscImpressions: 4200, gscClicks: 140 },
-                { time: 'Sat', visitors: 1330, gscImpressions: 4500, gscClicks: 150 },
-                { time: 'Sun', visitors: 1320, gscImpressions: 4300, gscClicks: 145 },
+                { time: 'Mon', visitors: 820, ga4Users: 710, gscImpressions: 2400, gscClicks: 72 },
+                { time: 'Tue', visitors: 932, ga4Users: 805, gscImpressions: 2800, gscClicks: 84 },
+                { time: 'Wed', visitors: 901, ga4Users: 780, gscImpressions: 2600, gscClicks: 78 },
+                { time: 'Thu', visitors: 934, ga4Users: 810, gscImpressions: 3100, gscClicks: 92 },
+                { time: 'Fri', visitors: 1290, ga4Users: 1110, gscImpressions: 4200, gscClicks: 140 },
+                { time: 'Sat', visitors: 1330, ga4Users: 1150, gscImpressions: 4500, gscClicks: 150 },
+                { time: 'Sun', visitors: 1320, ga4Users: 1140, gscImpressions: 4300, gscClicks: 145 },
             ];
     }
 };
 
 export default function TrafficChart({ range = '7d' }: TrafficChartProps) {
     const data = getDataForRange(range);
-    const [showGSC, setShowGSC] = useState(true);
+    // Transform data for range shading
+    const chartData = data.map(d => ({
+        ...d,
+        truthGap: [d.ga4Users, d.visitors]
+    }));
+
+    const [mode, setMode] = useState<ChartMode>('hybrid');
+    const [showGSC, setShowGSC] = useState(false);
 
     const rangeLabel = range === '7d' ? 'Last 7 Days' : range === '30d' ? 'Last 30 Days' : 'Last 90 Days';
 
-    // In a real implementation:
-    // useEffect(() => { fetch('/v1/analysis/gsc-overlay')... }, [])
-
     return (
-        <div className="glass-card h-[400px] flex flex-col">
-            <div className="mb-6 px-2 flex justify-between items-start">
+        <div className="glass-card h-[450px] flex flex-col relative overflow-hidden">
+            {/* Visual Flare for Hybrid mode */}
+            {mode === 'hybrid' && (
+                <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                    <Zap size={120} className="text-neon-green" />
+                </div>
+            )}
+
+            <div className="mb-6 px-2 flex flex-col md:flex-row justify-between items-start gap-4">
                 <div>
-                    <h3 className="text-white font-display font-semibold text-lg">Traffic Trends</h3>
+                    <h3 className="text-white font-display font-semibold text-lg flex items-center gap-2">
+                        Unified Truth Traffic
+                        {mode === 'hybrid' && <span className="text-[10px] bg-neon-green/20 text-neon-green px-1.5 py-0.5 rounded border border-neon-green/30 uppercase tracking-widest">Hybrid</span>}
+                    </h3>
                     <p className="text-gray-400 text-sm">{rangeLabel}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                
+                <div className="flex items-center gap-3 self-end">
+                    {/* Mode Toggle [Apex | GA4 | HYBRID] */}
+                    <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
+                        <button
+                            onClick={() => setMode('apex')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${mode === 'apex' ? 'bg-neon-purple text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                        >
+                            Apex
+                        </button>
+                        <button
+                            onClick={() => setMode('ga4')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${mode === 'ga4' ? 'bg-gray-600 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                        >
+                            GA4
+                        </button>
+                        <button
+                            onClick={() => setMode('hybrid')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${mode === 'hybrid' ? 'bg-neon-green text-black shadow-lg font-bold' : 'text-gray-500 hover:text-white'}`}
+                        >
+                            <Zap size={12} />
+                            Hybrid
+                        </button>
+                    </div>
+
                     <button
                         onClick={() => setShowGSC(!showGSC)}
-                        className={`text-xs px-2 py-1 rounded border transition-colors ${showGSC ? 'bg-orange-500/10 border-orange-500/30 text-orange-400' : 'border-white/10 text-gray-500'}`}
+                        className={`text-xs px-3 py-1.5 rounded-xl border transition-colors flex items-center gap-1.5 ${showGSC ? 'bg-orange-500/10 border-orange-500/30 text-orange-400' : 'border-white/10 text-gray-500 hover:text-white'}`}
                     >
-                        GSC Overlay
+                        <Activity size={14} />
+                        GSC
                     </button>
                 </div>
             </div>
 
             <div className="flex-1 w-full h-full">
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={data}>
+                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <defs>
-                            <linearGradient id="colorVisitors" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                                <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                            <linearGradient id="colorApex" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                             </linearGradient>
-                            <linearGradient id="colorImpressions" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#f97316" stopOpacity={0.1} />
-                                <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                            <linearGradient id="colorGA4" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#6b7280" stopOpacity={0.1} />
+                                <stop offset="95%" stopColor="#6b7280" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="colorGap" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
+                                <stop offset="100%" stopColor="#10b981" stopOpacity={0.1} />
                             </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
                         <XAxis
                             dataKey="time"
-                            stroke="#6b7280"
-                            tick={{ fill: '#9ca3af', fontSize: 12 }}
+                            stroke="#ffffff20"
+                            tick={{ fill: '#6b7280', fontSize: 11 }}
                             axisLine={false}
                             tickLine={false}
                         />
                         <YAxis
-                            stroke="#6b7280"
-                            tick={{ fill: '#9ca3af', fontSize: 12 }}
+                            stroke="#ffffff20"
+                            tick={{ fill: '#6b7280', fontSize: 11 }}
                             axisLine={false}
                             tickLine={false}
                         />
                         <Tooltip
                             contentStyle={{
-                                backgroundColor: 'rgba(10, 10, 10, 0.95)',
-                                borderColor: 'rgba(255,255,255,0.1)',
-                                backdropFilter: 'blur(10px)',
-                                borderRadius: '0.75rem',
-                                color: '#fff'
+                                backgroundColor: 'rgba(5, 5, 5, 0.9)',
+                                borderColor: 'rgba(255, 255, 255, 0.1)',
+                                backdropFilter: 'blur(20px)',
+                                borderRadius: '1rem',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
                             }}
+                            itemStyle={{ fontSize: '12px' }}
                         />
-                        <Area
-                            type="monotone"
-                            dataKey="visitors"
-                            stroke="#8b5cf6"
-                            strokeWidth={3}
-                            fillOpacity={1}
-                            fill="url(#colorVisitors)"
-                            name="Internal Traffic"
-                        />
-                        {showGSC && (
-                            <Line
+                        
+                        {/* Hybrid Shading (The Gap) */}
+                        {mode === 'hybrid' && (
+                            <Area
                                 type="monotone"
-                                dataKey="gscImpressions"
-                                stroke="#f97316"
-                                strokeWidth={2}
-                                dot={false}
-                                name="GSC Impressions"
-                                strokeDasharray="5 5"
+                                dataKey="truthGap"
+                                stroke="none"
+                                fill="url(#colorGap)"
+                                name="Ad-Block Recovery"
+                                animationDuration={1000}
+                                connectNulls
                             />
                         )}
+
+                        {/* Apex Line (The Truth) */}
+                        {(mode === 'apex' || mode === 'hybrid') && (
+                            <Area
+                                type="monotone"
+                                dataKey="visitors"
+                                stroke="#10b981"
+                                strokeWidth={3}
+                                fillOpacity={1}
+                                fill={mode === 'apex' ? "url(#colorApex)" : "none"}
+                                name="Apex (True Visitors)"
+                                animationDuration={1000}
+                                activeDot={{ r: 6, strokeWidth: 0, fill: '#10b981' }}
+                            />
+                        )}
+
+                        {/* GA4 Line (Standard View) */}
+                        {(mode === 'ga4' || mode === 'hybrid') && (
+                            <Area
+                                type="monotone"
+                                dataKey="ga4Users"
+                                stroke="#6b7280"
+                                strokeWidth={mode === 'hybrid' ? 2 : 3}
+                                strokeDasharray={mode === 'hybrid' ? "5 5" : "0"}
+                                fillOpacity={1}
+                                fill={mode === 'ga4' ? "url(#colorGA4)" : "none"}
+                                name="Google (GA4)"
+                                animationDuration={mode === 'hybrid' ? 1500 : 1000}
+                            />
+                        )}
+
                         {showGSC && (
                             <Line
                                 type="monotone"
                                 dataKey="gscClicks"
-                                stroke="#f59e0b"
+                                stroke="#f97316"
                                 strokeWidth={2}
-                                dot={{ r: 4, strokeWidth: 0, fill: '#f59e0b' }}
+                                dot={false}
                                 name="GSC Clicks"
                             />
                         )}
@@ -136,18 +212,24 @@ export default function TrafficChart({ range = '7d' }: TrafficChartProps) {
                 </ResponsiveContainer>
             </div>
 
-            {showGSC && (
-                <div className="flex justify-center gap-6 mt-2 pb-2">
-                    <div className="flex items-center gap-2 text-xs text-gray-400">
-                        <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                        GSC Impressions
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-gray-400">
-                        <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-                        GSC Clicks
-                    </div>
+            {/* Harmonized Legend */}
+            <div className="flex justify-center flex-wrap gap-4 mt-4 pb-4 border-t border-white/5 pt-4">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-white/60">
+                    <div className="w-3 h-1 bg-neon-green rounded-full"></div>
+                    Apex (Local Truth)
                 </div>
-            )}
+                {mode === 'hybrid' && (
+                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-neon-green/80">
+                         <div className="w-3 h-3 bg-neon-green/20 border border-neon-green/40 rounded-sm"></div>
+                        The Truth Gap (Recovered)
+                    </div>
+                )}
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gray-500">
+                    <div className="w-3 h-1 bg-gray-600 rounded-full border-t border-dashed border-gray-400"></div>
+                    Google Analytics (Partial)
+                </div>
+            </div>
         </div>
     );
 }
+

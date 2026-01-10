@@ -119,17 +119,18 @@ func (h *RecordingHandler) GetRecentRecordings(c *fiber.Ctx) error {
 	var query string
 	var args []interface{}
 
-	if filter == "rage" {
+	switch filter {
+	case "rage":
 		query = baseQuery + `
             JOIN wp_apex_events e ON r.session_id = e.session_id
             WHERE e.event_name = 'rage_click'
         ` + groupBy
-	} else if filter == "errors" {
+	case "errors":
 		query = baseQuery + `
             JOIN wp_apex_events e ON r.session_id = e.session_id
             WHERE e.event_name = 'console_error'
         ` + groupBy
-	} else if filter == "active" {
+	case "active":
 		query = `
 			SELECT r.session_id, MIN(r.created_at) as started_at, MAX(r.created_at) as last_active, COUNT(r.id) as chunks
 			FROM wp_apex_recordings r
@@ -137,7 +138,7 @@ func (h *RecordingHandler) GetRecentRecordings(c *fiber.Ctx) error {
 			HAVING last_active > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
 			ORDER BY last_active DESC LIMIT 50
 		`
-	} else {
+	default:
 		query = baseQuery + groupBy
 	}
 

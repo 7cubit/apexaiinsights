@@ -6,8 +6,21 @@ class WooCommerce
 {
     private const API_URL = 'http://localhost:8080/collect'; // Internal Go Engine URL
 
+    /**
+     * Check if WooCommerce is active and available
+     */
+    public static function is_active(): bool
+    {
+        return class_exists('WooCommerce') && function_exists('WC');
+    }
+
     public function register(): void
     {
+        // Strict WooCommerce availability check - prevents fatal errors if WooCommerce is not installed/active
+        if (!self::is_active()) {
+            return;
+        }
+
         // Add COGS field to General tab
         add_action('woocommerce_product_options_pricing', [$this, 'add_cogs_field']);
         add_action('woocommerce_process_product_meta', [$this, 'save_cogs_field']);
@@ -18,7 +31,7 @@ class WooCommerce
         // Whale Alert Hook (Added to Cart)
         add_action('woocommerce_add_to_cart', [$this, 'check_whale_cart'], 10, 6);
 
-        // Register Settings
+        // Register Settings (always register so settings page doesn't error)
         add_action('admin_init', [$this, 'register_settings']);
     }
 

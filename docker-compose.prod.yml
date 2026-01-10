@@ -1,0 +1,158 @@
+# Production Docker Compose for ApexAI Insights
+# Security: Engine only accessible via internal apex-net network
+# Reliability: All services set to restart: always, Redis with persistence
+#
+# USAGE: docker compose -f docker-compose.prod.yml up -d
+# Optional: Create .env.prod file to override defaults
+
+services:
+  # 1. Database
+  db:
+    image: mysql:8.0
+    container_name: apex-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-apex_root_secure_2026}
+      MYSQL_DATABASE: ${DB_NAME:-wordpress}
+      MYSQL_USER: ${DB_USER:-wordpress}
+      MYSQL_PASSWORD: ${DB_PASS:-password}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - apex-net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p${DB_ROOT_PASSWORD}",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # 2. Redis (Cache) - with persistence
+  redis:
+    image: redis:alpine
+    container_name: apex-redis
+    restart: always
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - redis_data:/data
+    networks:
+      - apex-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # 3. WordPress
+  wordpress:
+    image: wordpress:latest
+    container_name: apex-wp
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: ${DB_USER}
+      WORDPRESS_DB_PASSWORD: ${DB_PASS}
+      WORDPRESS_DB_NAME: ${DB_NAME}
+      WORDPRESS_DEBUG: 0
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      APEX_OAUTH_SECRET: ${APEX_OAUTH_SECRET}
+    volumes:
+      - wp_data:/var/www/html
+      - ./plugin-core:/var/www/html/wp-content/plugins/apex-ai-insights:ro
+    networks:
+      - apex-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/wp-admin/install.php"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # 4. Apex Intelligence Engine (Go)
+  # SECURITY: No external port exposure - accessible only via apex-net
+  apex-engine:
+    build:
+      context: ./engine-go
+      dockerfile: Dockerfile
+    container_name: apex-engine
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DB_USER: ${DB_USER:-wordpress}
+      DB_PASS: ${DB_PASS:-password}
+      DB_HOST: db
+      DB_NAME: ${DB_NAME:-wordpress}
+      PORT: 8080
+      JWT_SECRET: ${JWT_SECRET:-apex_jwt_secret_auto_generated_2026}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
+      EMAILIT_API_KEY: ${EMAILIT_API_KEY:-}
+      APEX_LICENSE_KEY: ${APEX_LICENSE_KEY:-}
+      GDPR_SECRET: ${GDPR_SECRET:-apex_gdpr_daily_salt_secret}
+      APEX_OAUTH_SECRET: ${APEX_OAUTH_SECRET}
+      REDIS_HOST: redis:6379
+    networks:
+      - apex-net
+    # NO PORTS - internal only, accessible via apex-net network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  apex-net:
+    driver: bridge
+    internal: false # WordPress needs outbound access
+
+volumes:
+  db_data:
+    driver: local
+  wp_data:
+    driver: local
+  redis_data:
+    driver: local

@@ -42,7 +42,7 @@ func NewQueryBuilder(apiKey string) *QueryBuilder {
 // GenerateSQL converts a natural language question into a MySQL query
 func (qb *QueryBuilder) GenerateSQL(question string, contextSummary string) (string, error) {
 	if qb.OpenAIKey == "" {
-		return "", errors.New("OpenAI API key is missing")
+		return "", ErrMissingAPIKey
 	}
 
 	systemPrompt := `You are a MySQL Expert and a Ruthless Business Analyst for a website analytics platform.
@@ -81,9 +81,13 @@ Rules:
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+qb.OpenAIKey)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		// Check for timeout
+		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") {
+			return "", ErrAPITimeout
+		}
 		return "", err
 	}
 	defer resp.Body.Close()
@@ -99,7 +103,7 @@ Rules:
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return "", errors.New("no response from AI")
+		return "", ErrNoResponse
 	}
 
 	sql := chatResp.Choices[0].Message.Content

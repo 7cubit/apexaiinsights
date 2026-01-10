@@ -12,7 +12,7 @@ export default function JarvisOrb({ isListening, onClick, transcript }: JarvisOr
 
             {/* Transcript Bubble */}
             {isListening && transcript && (
-                <div className="mb-4 bg-slate-900/90 backdrop-blur border border-slate-700 text-purple-300 px-4 py-2 rounded-xl rounded-tr-none shadow-lg max-w-xs animate-fade-in pointer-events-auto">
+                <div className="mb-4 bg-midnight-light/80 backdrop-blur-xl border border-neon-purple/30 text-neon-purple/80 px-4 py-2 rounded-xl rounded-tr-none shadow-[0_0_20px_rgba(189,52,254,0.1)] max-w-xs animate-fade-in pointer-events-auto italic text-sm">
                     "{transcript}"
                 </div>
             )}
@@ -20,20 +20,21 @@ export default function JarvisOrb({ isListening, onClick, transcript }: JarvisOr
             {/* Orb Container */}
             <button
                 onClick={onClick}
-                className={`pointer-events-auto relative flex items-center justify-center w-16 h-16 rounded-full transition-all duration-300 ${isListening ? 'bg-purple-600 scale-110 shadow-[0_0_30px_rgba(147,51,234,0.6)]' : 'bg-slate-800 hover:bg-slate-700 shadow-lg border border-slate-700'}`}
+                className={`pointer-events-auto relative flex items-center justify-center w-16 h-16 rounded-full transition-all duration-500 ${isListening ? 'bg-neon-purple scale-110 shadow-[0_0_40px_rgba(189,52,254,0.6)]' : 'bg-white/5 hover:bg-white/10 shadow-xl border border-white/10 backdrop-blur-md'}`}
             >
                 {/* Pulsing Rings */}
                 {isListening && (
                     <>
-                        <div className="absolute w-full h-full rounded-full bg-purple-500 opacity-30 animate-ping"></div>
-                        <div className="absolute w-[120%] h-[120%] rounded-full border border-purple-500/30 animate-pulse"></div>
+                        <div className="absolute w-full h-full rounded-full bg-neon-purple opacity-40 animate-ping"></div>
+                        <div className="absolute w-[140%] h-[140%] rounded-full border border-neon-purple/20 animate-pulse"></div>
+                        <div className="absolute w-[180%] h-[180%] rounded-full border border-neon-purple/5 animate-pulse delay-75"></div>
                     </>
                 )}
 
                 {isListening ? (
-                    <Mic className="w-8 h-8 text-white animate-pulse" />
+                    <Mic className="w-7 h-7 text-white animate-pulse" />
                 ) : (
-                    <Mic className="w-6 h-6 text-slate-400" />
+                    <Mic className="w-6 h-6 text-gray-500" />
                 )}
             </button>
         </div>

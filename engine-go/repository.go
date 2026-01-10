@@ -231,6 +231,14 @@ func (r *Repository) Migrate() {
 			is_active TINYINT(1) DEFAULT 1,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
+		// GDPR Settings Table (Phase 24)
+		`CREATE TABLE IF NOT EXISTS wp_apex_settings (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			option_name VARCHAR(255) NOT NULL UNIQUE,
+			option_value TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+		)`,
 	}
 
 	for _, q := range queries {
@@ -485,11 +493,15 @@ func SetupCollectEndpoint(app *fiber.App, repo *Repository, rEngine *recon.Recon
 			})
 		}
 
-		// Dynamic GDPR Check (Phase 24)
-		if c.Get("X-Apex-GDPR") == "true" {
-			// Hash the IP immediately if GDPR is active
-			hash := sha256.Sum256([]byte(event.IP + os.Getenv("GDPR_SALT")))
-			event.IP = hex.EncodeToString(hash[:])
+		// Dynamic GDPR Check - use manager with daily salt
+		gdpr := GetGDPRManager()
+		gdprActive := c.Get("X-Apex-GDPR") == "true"
+		if gdpr != nil && gdpr.IsGDPREnabled() {
+			gdprActive = true
+		}
+		if gdprActive && gdpr != nil {
+			// Hash the IP with daily-rotating salt before it touches the database
+			event.IP = gdpr.HashIP(event.IP)
 		}
 
 		// Bot detection

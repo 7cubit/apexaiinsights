@@ -9,6 +9,8 @@ use ApexAI\Api\SearchController;
 use ApexAI\Api\AutomationController;
 use ApexAI\Services\DataPruner;
 use ApexAI\Services\LicenseManager;
+use WP_REST_Request;
+use WP_Error;
 
 class Plugin
 {
@@ -134,6 +136,9 @@ class Plugin
         $this->register_rest_api();
         $this->register_integrations();
 
+        // Phase 21.1: Google Analytics OAuth
+        (new \ApexAI\Api\OAuthController())->register();
+
         // Phase 18: Testing & Plugin Health
         (new \ApexAI\Services\ConflictDetector())->init();
 
@@ -219,6 +224,7 @@ class Plugin
     private function register_ajax_handlers(): void
     {
         add_action('wp_ajax_apex_check_connectivity', [$this, 'handle_check_connectivity']);
+        add_action('wp_ajax_apex_check_health', [$this, 'handle_check_health']);
 
         add_action('rest_api_init', function () {
             (new SearchController())->register_routes();
@@ -279,29 +285,79 @@ class Plugin
         }
     }
 
+    /**
+     * Handle comprehensive health check AJAX request
+     * Calls the Go engine's /debug/health endpoint for MySQL, Redis, and system status
+     */
+    public function handle_check_health(): void
+    {
+        check_ajax_referer('apex-ai-insights', 'nonce');
+
+        $endpoints = [
+            'http://apex-engine:8080/debug/health',
+            'http://host.docker.internal:8080/debug/health',
+            'http://localhost:8080/debug/health',
+            'http://127.0.0.1:8080/debug/health'
+        ];
+
+        $last_error = 'All endpoints failed';
+        $health_data = null;
+
+        foreach ($endpoints as $url) {
+            $response = wp_remote_get($url, ['timeout' => 5]);
+
+            if (is_wp_error($response)) {
+                $last_error = $response->get_error_message();
+                continue;
+            }
+
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code !== 200 && $code !== 503) { // 503 = unhealthy but still responding
+                $last_error = "HTTP $code";
+                continue;
+            }
+
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+
+            if (isset($data['status'])) {
+                $health_data = $data;
+                break;
+            }
+        }
+
+        if ($health_data) {
+            wp_send_json_success($health_data);
+        } else {
+            wp_send_json_error(['message' => 'Engine not reachable: ' . $last_error]);
+        }
+    }
+
     public function register_integrations()
     {
-        // Trigger: Cart Abandonment / Activity
-        // Send event to GO when item added to cart
-        add_action('woocommerce_add_to_cart', function ($cart_item_key, $product_id, $quantity, $variation_id, $variation, $cart_item_data) {
-            $payload = [
-                'type' => 'cart_activity',
-                'payload' => [
-                    'product_id' => $product_id,
-                    'quantity' => $quantity,
-                    'user_id' => get_current_user_id()
-                ]
-            ];
+        // WooCommerce Integration - only register if WooCommerce is active
+        if (class_exists('WooCommerce')) {
+            // Trigger: Cart Abandonment / Activity
+            // Send event to GO when item added to cart
+            add_action('woocommerce_add_to_cart', function ($cart_item_key, $product_id, $quantity, $variation_id, $variation, $cart_item_data) {
+                $payload = [
+                    'type' => 'cart_activity',
+                    'payload' => [
+                        'product_id' => $product_id,
+                        'quantity' => $quantity,
+                        'user_id' => get_current_user_id()
+                    ]
+                ];
 
-            // Async Post to Go
-            $url = 'http://apex-engine:8080/v1/automation/event';
-            wp_remote_post($url, [
-                'blocking' => false, // Async
-                'headers' => ['Content-Type' => 'application/json'],
-                'body' => json_encode($payload)
-            ]);
-        }, 10, 6);
-        // (WooCommerce, etc.)
+                // Async Post to Go
+                $url = 'http://apex-engine:8080/v1/automation/event';
+                wp_remote_post($url, [
+                    'blocking' => false, // Async
+                    'headers' => ['Content-Type' => 'application/json'],
+                    'body' => json_encode($payload)
+                ]);
+            }, 10, 6);
+        }
     }
 
     private function register_rest_api(): void
@@ -399,6 +455,7 @@ class Plugin
             'tunnel_url' => rest_url('apex/v1/tunnel'), // The Proxy
             'nonce' => wp_create_nonce('wp_rest'),
             'plan' => get_option('apex_plan', 'plus'), // Entry default to plus
+            'wooActive' => class_exists('WooCommerce'), // WooCommerce availability flag
             'license' => [
                 'status' => $this->get_license_status_for_config(),
                 'key' => get_option('apex_license_key', ''),
@@ -415,14 +472,84 @@ class Plugin
 
     public function render_dashboard(): void
     {
-        // Phase 8.5: React Container
-        echo '<div id="apex-dashboard-root" class="wrap"></div>';
+        // Phase 8.5: React Container with immediate dark background to prevent flash
+        ?>
+        <style>
+            #apex-dashboard-root {
+                background: #0a0a0a;
+                min-height: 100vh;
+                margin-left: -20px;
+                margin-right: -20px;
+                padding: 20px;
+            }
+
+            #apex-dashboard-root .apex-loader {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 60vh;
+                gap: 16px;
+            }
+
+            #apex-dashboard-root .apex-loader-spinner {
+                width: 48px;
+                height: 48px;
+                border: 3px solid rgba(255, 255, 255, 0.1);
+                border-top-color: #a855f7;
+                border-radius: 50%;
+                animation: apex-spin 1s linear infinite;
+            }
+
+            @keyframes apex-spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            #apex-dashboard-root .apex-loader-text {
+                color: #6b7280;
+                font-size: 14px;
+            }
+        </style>
+        <div id="apex-dashboard-root" class="wrap">
+            <div class="apex-loader">
+                <div class="apex-loader-spinner"></div>
+                <span class="apex-loader-text">Loading Intelligence Engine...</span>
+            </div>
+        </div>
+        <script>
+            (function () {
+                // Instant navigation: Intercept WP Submenu Clicks
+                document.addEventListener('click', function (e) {
+                    var link = e.target.closest('a[href*="page=apex-ai-insights"]');
+                    if (!link) return;
+
+                    var href = link.getAttribute('href');
+                    // Extract tab from URL (e.g., apex-ai-insights-content -> content)
+                    var match = href.match(/page=apex-ai-insights(?:-([a-z]+))?/);
+                    if (match) {
+                        e.preventDefault();
+                        var tab = match[1] || 'overview';
+                        window.location.hash = tab;
+                        // Dispatch event for React to pick up
+                        window.dispatchEvent(new HashChangeEvent('hashchange'));
+                        // Update WP admin menu active state
+                        document.querySelectorAll('#adminmenu .wp-submenu a').forEach(function (a) {
+                            a.parentElement.classList.remove('current');
+                        });
+                        link.parentElement.classList.add('current');
+                    }
+                });
+            })();
+        </script>
+        <?php
     }
 
     public function render_settings_page(): void
     {
         ?>
-        <div class="wrap">
+        <div class="wrap" style="padding: 20px 30px;">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
             <form action="options.php" method="post">
                 <?php

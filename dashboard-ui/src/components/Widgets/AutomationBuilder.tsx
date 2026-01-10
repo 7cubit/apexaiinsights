@@ -31,9 +31,9 @@ export const AutomationBuilder = () => {
     const fetchRules = async () => {
         try {
             // @ts-ignore
-            const root = window.apexSearchConfig?.api_root || '/wp-json/apex/v1';
+            const root = window.apexConfig?.api_root || '/wp-json/apex/v1';
             // @ts-ignore
-            const nonce = window.apexSearchConfig?.nonce || '';
+            const nonce = window.apexConfig?.nonce || '';
 
             const res = await axios.get(`${root}/automation/rules`, {
                 headers: { 'X-WP-Nonce': nonce }
@@ -49,9 +49,9 @@ export const AutomationBuilder = () => {
     const handleCreate = async () => {
         try {
             // @ts-ignore
-            const root = window.apexSearchConfig?.api_root || '/wp-json/apex/v1';
+            const root = window.apexConfig?.api_root || '/wp-json/apex/v1';
             // @ts-ignore
-            const nonce = window.apexSearchConfig?.nonce || '';
+            const nonce = window.apexConfig?.nonce || '';
 
             const payload = {
                 name,
@@ -87,9 +87,9 @@ export const AutomationBuilder = () => {
         if (!confirm("Are you sure?")) return;
         try {
             // @ts-ignore
-            const root = window.apexSearchConfig?.api_root || '/wp-json/apex/v1';
+            const root = window.apexConfig?.api_root || '/wp-json/apex/v1';
             // @ts-ignore
-            const nonce = window.apexSearchConfig?.nonce || '';
+            const nonce = window.apexConfig?.nonce || '';
             await axios.delete(`${root}/automation/rules/${id}`, {
                 headers: { 'X-WP-Nonce': nonce }
             });
@@ -120,21 +120,24 @@ export const AutomationBuilder = () => {
 
             {/* Rule Creator */}
             {showCreator && (
-                <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-xl space-y-4">
-                    <h3 className="font-semibold text-white">Create Automation Rule</h3>
+                <div className="glass-card border border-yellow-500/30 p-6 rounded-xl space-y-4 animate-in slide-in-from-top duration-300">
+                    <h3 className="font-display font-semibold text-white flex items-center gap-2">
+                        <Plus size={18} className="text-yellow-400" />
+                        Create Automation Rule
+                    </h3>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="text-xs text-slate-400">Rule Name</label>
+                            <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Rule Name</label>
                             <input
-                                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white"
+                                className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-yellow-500/50 transition-colors"
                                 value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Alert me on Cart Abandon"
                             />
                         </div>
                         <div>
-                            <label className="text-xs text-slate-400">If (Trigger)</label>
+                            <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">If (Trigger)</label>
                             <select
-                                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white"
+                                className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-yellow-500/50 transition-colors cursor-pointer"
                                 value={trigger} onChange={e => setTrigger(e.target.value)}
                             >
                                 <option value="cart_activity">Cart Activity (Add to Cart)</option>
@@ -142,9 +145,9 @@ export const AutomationBuilder = () => {
                             </select>
                         </div>
                         <div>
-                            <label className="text-xs text-slate-400">Then (Action)</label>
+                            <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Then (Action)</label>
                             <select
-                                className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white"
+                                className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white focus:border-yellow-500/50 transition-colors cursor-pointer"
                                 value={action} onChange={e => setAction(e.target.value)}
                             >
                                 <option value="email">Send Email (via WP)</option>
@@ -156,27 +159,27 @@ export const AutomationBuilder = () => {
 
                     {/* Dynamic Action Fields */}
                     {action === 'email' && (
-                        <div className="space-y-2 p-4 bg-slate-900/50 rounded border border-slate-700/50">
+                        <div className="space-y-4 p-4 bg-white/5 rounded-xl border border-white/10 animate-fade-in">
                             <div>
-                                <label className="text-xs text-slate-400">Recipient Email</label>
+                                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Recipient Email</label>
                                 <input
-                                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white"
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white"
                                     value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@example.com"
                                 />
                             </div>
                             <div>
-                                <label className="text-xs text-slate-400">Message Body</label>
+                                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Message Body</label>
                                 <textarea
-                                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white h-20"
+                                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white h-24"
                                     value={message} onChange={e => setMessage(e.target.value)} placeholder="Alert: Event detected..."
                                 />
                             </div>
                         </div>
                     )}
 
-                    <div className="flex justify-end gap-2">
-                        <button onClick={() => setShowCreator(false)} className="px-4 py-2 text-slate-400 hover:text-white">Cancel</button>
-                        <button onClick={handleCreate} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg">Save Rule</button>
+                    <div className="flex justify-end gap-3 pt-2">
+                        <button onClick={() => setShowCreator(false)} className="px-4 py-2 text-gray-400 hover:text-white transition-colors text-sm">Cancel</button>
+                        <button onClick={handleCreate} className="px-8 py-2 bg-yellow-500 text-black font-bold rounded-xl hover:shadow-[0_0_20px_rgba(234,179,8,0.4)] transition-all text-sm">Save Rule</button>
                     </div>
                 </div>
             )}

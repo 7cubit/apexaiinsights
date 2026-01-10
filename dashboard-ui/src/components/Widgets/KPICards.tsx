@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, DollarSign, Users, MousePointer2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Users, MousePointer2, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 
 interface KPICardProps {
@@ -22,6 +22,15 @@ const BASE_KPI_DATA = [
         trend: 'up' as const,
         icon: Users,
         color: 'text-neon-blue'
+    },
+    {
+        label: 'Recovered Traffic',
+        baseValue: 1242, // The Truth Gap
+        change: 'Ad-Block',
+        trend: 'up' as const,
+        icon: ShieldCheck,
+        color: 'text-neon-green',
+        description: 'Captured by Apex, missed by GA4'
     },
     {
         label: 'Bounce Rate',

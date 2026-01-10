@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -48,8 +49,27 @@ func (h *OptimizationHandler) GetSuggestions(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid payload"})
 	}
 
+	// Check license/grace period before AI features
+	license := GetLicenseValidator()
+	if !license.IsProModeEnabled() {
+		log.Println("License expired, returning license fallback")
+		status := license.GetLicenseStatus()
+		return c.JSON(fiber.Map{
+			"suggestions":     FallbackLicenseExpired,
+			"is_fallback":     true,
+			"license_expired": true,
+			"license_status":  status.Status,
+		})
+	}
+
+	// Graceful fallback if API key is missing
 	if h.apiKey == "" {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "AI service not configured"})
+		log.Println("OpenAI API key not configured, returning fallback suggestions")
+		fallback := GetOptimizationFallback("API key not configured")
+		return c.JSON(fiber.Map{
+			"suggestions": fallback.Insight,
+			"is_fallback": true,
+		})
 	}
 
 	// Construct prompt for GPT-4o
@@ -70,8 +90,12 @@ Field Metrics (High friction items):
 	// Call OpenAI API
 	response, err := h.callOpenAI(prompt)
 	if err != nil {
-		log.Printf("OpenAI error: %v", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "AI analysis failed"})
+		log.Printf("OpenAI error: %v, returning fallback", err)
+		fallback := GetOptimizationFallback(err.Error())
+		return c.JSON(fiber.Map{
+			"suggestions": fallback.Insight,
+			"is_fallback": true,
+		})
 	}
 
 	return c.JSON(fiber.Map{
@@ -97,9 +121,13 @@ func (h *OptimizationHandler) callOpenAI(prompt string) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+h.apiKey)
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: AITimeout}
 	resp, err := client.Do(req)
 	if err != nil {
+		// Detect timeout errors
+		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") {
+			return "", fmt.Errorf("request timed out")
+		}
 		return "", err
 	}
 	defer resp.Body.Close()
