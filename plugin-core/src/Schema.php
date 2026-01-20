@@ -45,7 +45,8 @@ class Schema
             is_bounce TINYINT(1) DEFAULT 1,
             INDEX idx_session_id (session_id),
             INDEX idx_fingerprint (fingerprint),
-            INDEX idx_started_at (started_at)
+            INDEX idx_started_at (started_at),
+            INDEX idx_referrer (referrer(191))
         ) $charset_collate;";
 
         // Events table

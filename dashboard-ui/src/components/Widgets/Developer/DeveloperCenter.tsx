@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Code, Webhook, Key, Database, Play, Plus, Copy } from 'lucide-react';
+import { Code, Webhook, Key, Database, Play, Plus, Copy, Loader2 } from 'lucide-react';
 
 export default function DeveloperCenter() {
     interface WebhookItem {
@@ -15,14 +15,19 @@ export default function DeveloperCenter() {
     const [showKey, setShowKey] = useState(false);
     const [newHookUrl, setNewHookUrl] = useState('');
     const [loading, setLoading] = useState(false);
+    const [webhooksLoading, setWebhooksLoading] = useState(true);
+
+    // @ts-ignore
+    const apiRoot = window.apexConfig?.tunnel_url || '/apex/v1/tunnel';
 
     useEffect(() => {
         fetchWebhooks();
     }, []);
 
     const fetchWebhooks = async () => {
+        setWebhooksLoading(true);
         try {
-            const res = await fetch('http://localhost:8080/v1/dev/webhooks');
+            const res = await fetch(`${apiRoot}?path=/v1/dev/webhooks`);
             if (res.ok) {
                 const data = await res.json();
                 setWebhooks(data || []);
@@ -30,13 +35,14 @@ export default function DeveloperCenter() {
         } catch (e) {
             console.error("Failed to fetch webhooks", e);
         }
+        setWebhooksLoading(false);
     };
 
     const handleCreateWebhook = async () => {
         if (!newHookUrl) return;
         setLoading(true);
         try {
-            await fetch('http://localhost:8080/v1/dev/webhooks', {
+            await fetch(`${apiRoot}?path=/v1/dev/webhooks`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -54,7 +60,7 @@ export default function DeveloperCenter() {
 
     const handleTestWebhook = async (id: number) => {
         try {
-            await fetch(`http://localhost:8080/v1/dev/webhooks/${id}/test`, { method: 'POST' });
+            await fetch(`${apiRoot}?path=/v1/dev/webhooks/${id}/test`, { method: 'POST' });
             alert("Test payload sent!");
         } catch (e) {
             alert("Test failed");
@@ -135,13 +141,17 @@ export default function DeveloperCenter() {
                                 disabled={loading}
                                 className="px-3 py-2 bg-pink-500 hover:bg-pink-600 text-white rounded-lg flex items-center gap-2"
                             >
-                                <Plus className="w-4 h-4" />
+                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                                 Add
                             </button>
                         </div>
 
                         <div className="space-y-2 mt-4 max-h-60 overflow-y-auto">
-                            {webhooks.length === 0 ? (
+                            {webhooksLoading ? (
+                                <div className="flex items-center justify-center py-8">
+                                    <Loader2 className="w-6 h-6 text-pink-400 animate-spin" />
+                                </div>
+                            ) : webhooks.length === 0 ? (
                                 <p className="text-center text-slate-500 py-4 text-sm">No webhooks configured</p>
                             ) : (
                                 webhooks.map((hook) => (

@@ -142,6 +142,10 @@ func (r *Repository) Migrate() {
 			INDEX idx_form_session (session_id, form_id)
 		)`,
 
+		// Optimization: Index for Dark Social
+		`CREATE INDEX IF NOT EXISTS idx_referrer ON wp_apex_sessions (referrer(191))`,
+		`CREATE INDEX IF NOT EXISTS idx_landing ON wp_apex_sessions (landing_page(191))`,
+
 		// Phase 10: Search Analytics
 		`CREATE TABLE IF NOT EXISTS wp_apex_search_analytics (
 			id INT AUTO_INCREMENT PRIMARY KEY,
@@ -238,6 +242,63 @@ func (r *Repository) Migrate() {
 			option_value TEXT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+		)`,
+		// Phase 12: Segmentation
+		`CREATE TABLE IF NOT EXISTS wp_apex_segments (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			name VARCHAR(255) NOT NULL,
+			criteria JSON,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS wp_apex_downloads (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			url TEXT,
+			file_url TEXT,
+			session_id VARCHAR(255),
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// Phase 15: Security & Compliance
+		`CREATE TABLE IF NOT EXISTS wp_apex_audit_log (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			actor VARCHAR(255),
+			action VARCHAR(255),
+			target_resource TEXT,
+			details TEXT,
+			ip_address VARCHAR(45),
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_audit_created (created_at)
+		)`,
+		`CREATE TABLE IF NOT EXISTS wp_apex_blocklist (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			type VARCHAR(50),
+			value VARCHAR(255),
+			reason TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_blocklist_type (type, value)
+		)`,
+		// Phase 16: God Mode (Multi-Site Management)
+		`CREATE TABLE IF NOT EXISTS wp_apex_instances (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			domain VARCHAR(255) UNIQUE,
+			api_key VARCHAR(255),
+			status VARCHAR(50) DEFAULT 'active',
+			plugin_version VARCHAR(20),
+			last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_instance_domain (domain),
+			INDEX idx_instance_key (api_key)
+		)`,
+		`CREATE TABLE IF NOT EXISTS wp_apex_remote_commands (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			instance_id INT,
+			command VARCHAR(255),
+			payload TEXT,
+			status VARCHAR(50) DEFAULT 'queued',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			executed_at TIMESTAMP NULL,
+			INDEX idx_cmd_instance (instance_id),
+			INDEX idx_cmd_status (status),
+			FOREIGN KEY (instance_id) REFERENCES wp_apex_instances(id) ON DELETE CASCADE
 		)`,
 	}
 
@@ -368,8 +429,8 @@ func (r *Repository) RunReadOnlyQuery(query string) ([]map[string]interface{}, e
 
 	// Basic safety check again (defense in depth)
 	upperSQL := strings.ToUpper(strings.TrimSpace(query))
-	if !strings.HasPrefix(upperSQL, "SELECT") {
-		return nil, errors.New("only SELECT queries are allowed")
+	if !strings.HasPrefix(upperSQL, "SELECT") && !strings.HasPrefix(upperSQL, "WITH") {
+		return nil, errors.New("only SELECT or WITH queries are allowed")
 	}
 
 	rows, err := r.db.Query(query)

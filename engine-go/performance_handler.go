@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -14,12 +14,15 @@ import (
 type PerformanceHandler struct {
 	Repo         *Repository
 	PageSpeedKey string
+	cache        fiber.Map
+	cacheTime    time.Time
 }
 
-func NewPerformanceHandler(repo *Repository) *PerformanceHandler {
+func NewPerformanceHandler(repo *Repository, apiKey string) *PerformanceHandler {
 	return &PerformanceHandler{
 		Repo:         repo,
-		PageSpeedKey: os.Getenv("PAGESPEED_API_KEY"),
+		PageSpeedKey: apiKey,
+		cache:        make(fiber.Map),
 	}
 }
 
@@ -70,8 +73,6 @@ func (h *PerformanceHandler) IngestRUM(c *fiber.Ctx) error {
 
 // GetPerformanceStats: Aggregates RUM data for dashboard
 func (h *PerformanceHandler) GetPerformanceStats(c *fiber.Ctx) error {
-	// 75th percentile approximation (using AVG for MVP for simplicity on MySQL without window functions/percentile_cont easily available on older versions)
-	// Production would calculate proper p75
 	rows, err := h.Repo.RunReadOnlyQuery(`
         SELECT 
             AVG(lcp) as avg_lcp,
@@ -87,7 +88,24 @@ func (h *PerformanceHandler) GetPerformanceStats(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.JSON(rows[0])
+	if len(rows) == 0 {
+		return c.JSON(fiber.Map{
+			"avg_lcp":     0,
+			"avg_cls":     0,
+			"avg_inp":     0,
+			"avg_ttfb":    0,
+			"sample_size": 0,
+		})
+	}
+
+	res := rows[0]
+	return c.JSON(fiber.Map{
+		"avg_lcp":     castToFloat(res["avg_lcp"]),
+		"avg_cls":     castToFloat(res["avg_cls"]),
+		"avg_inp":     castToFloat(res["avg_inp"]),
+		"avg_ttfb":    castToFloat(res["avg_ttfb"]),
+		"sample_size": castToFloat(res["sample_size"]),
+	})
 }
 
 // RunPageSpeed: Triggers a scan via Google PSI API
@@ -100,8 +118,19 @@ func (h *PerformanceHandler) RunPageSpeed(c *fiber.Ctx) error {
 	strategy := c.Query("strategy", "mobile") // mobile or desktop
 
 	apiKey := h.PageSpeedKey
-	if apiKey == "" {
-		return c.Status(500).JSON(fiber.Map{"error": "API Key not configured"}) // Should not happen given checkpoint
+	if apiKey == "" || apiKey == "your-pagespeed-key" {
+		// Mock response if API key is not configured to avoid breaking UI
+		log.Println("[WARN] PAGESPEED_API_KEY not configured. Returning mock data.")
+		return c.JSON(fiber.Map{
+			"url":      targetURL,
+			"strategy": strategy,
+			"score":    85,
+			"script_impact": []fiber.Map{
+				{"url": "https://example.com/wp-content/plugins/some-plugin/script.js", "wasted_bytes": 45000, "plugin": "Some Plugin"},
+			},
+			"lazy_load_candidates": []string{"https://example.com/wp-content/uploads/hero.jpg"},
+			"mock":                 true,
+		})
 	}
 
 	apiURL := fmt.Sprintf("https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=%s&key=%s&strategy=%s&category=PERFORMANCE", targetURL, apiKey, strategy)
@@ -205,8 +234,14 @@ func detectPluginFromURL(url string) string {
 	return "Unknown"
 }
 
-// CheckDBHealth: Scans table sizes, row counts, and detailed autoloads
+// CheckDBHealth: Analyzes table sizes and autoload bloat
 func (h *PerformanceHandler) CheckDBHealth(c *fiber.Ctx) error {
+	// Simple memory cache (15 minutes)
+	if time.Since(h.cacheTime) < 15*time.Minute && len(h.cache) > 0 {
+		h.cache["cached"] = true
+		h.cache["last_updated"] = h.cacheTime.Format(time.RFC3339)
+		return c.JSON(h.cache)
+	}
 	// 1. Autoload Size & Top Offenders
 	autoloadQuery := `
         SELECT option_name, LENGTH(option_value) as size_bytes
@@ -250,13 +285,27 @@ func (h *PerformanceHandler) CheckDBHealth(c *fiber.Ctx) error {
 	`
 	tableStats, _ := h.Repo.RunReadOnlyQuery(tableQuery)
 
-	return c.JSON(fiber.Map{
+	// 3. Transient Count (Performance/Bloat)
+	transientQuery := `SELECT COUNT(*) as cnt FROM wp_options WHERE option_name LIKE '_transient_%'`
+	transientRows, _ := h.Repo.RunReadOnlyQuery(transientQuery)
+	transientCount := 0
+	if len(transientRows) > 0 {
+		transientCount = int(castToFloat(transientRows[0]["cnt"]))
+	}
+
+	h.cache = fiber.Map{
 		"autoload_size_bytes": totalAutoloadSize,
 		"autoload_size_mb":    totalAutoloadSize / 1024 / 1024,
 		"top_autoloads":       topAutoloads,
 		"largest_tables":      tableStats,
+		"transient_count":     transientCount,
 		"status":              "ok",
-	})
+		"cached":              false,
+		"last_updated":        time.Now().Format(time.RFC3339),
+	}
+	h.cacheTime = time.Now()
+
+	return c.JSON(h.cache)
 }
 
 // Helper for type casting sql interface

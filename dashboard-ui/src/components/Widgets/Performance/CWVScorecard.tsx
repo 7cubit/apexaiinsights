@@ -31,10 +31,40 @@ const MetricCard: React.FC<MetricProps> = ({ label, value, unit, score, desc }) 
 };
 
 const CWVScorecard: React.FC = () => {
-    // Mock Data - In real app, fetch from /v1/performance/stats
-    // LCP < 2500ms Good
-    // CLS < 0.1 Good
-    // INP < 200ms Good
+    const [stats, setStats] = React.useState<any>(null);
+    const [loading, setLoading] = React.useState(true);
+
+    React.useEffect(() => {
+        // @ts-ignore
+        const apiRoot = window.apexConfig?.tunnel_url || '/apex/v1/tunnel';
+        fetch(`${apiRoot}?path=/v1/performance/stats`)
+            .then(res => res.json())
+            .then(data => setStats(data))
+            .catch(err => console.error(err))
+            .finally(() => setLoading(false));
+    }, []);
+
+    const getScore = (val: number, good: number, ni: number) => {
+        if (val <= good) return 'good';
+        if (val <= ni) return 'needs-improvement';
+        return 'poor';
+    };
+
+    if (loading) {
+        return (
+            <div className="glass-card p-6 border border-white/10 bg-black/20 backdrop-blur-md rounded-lg min-h-[200px]">
+                <h3 className="text-lg font-medium text-white mb-6 flex items-center gap-2 opacity-50">
+                    <Zap className="h-5 w-5 text-yellow-400" />
+                    Core Web Vitals (Live RUM)
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {[1, 2, 3].map(i => (
+                        <div key={i} className="p-4 rounded-lg border border-white/5 bg-white/5 h-[120px] animate-pulse" />
+                    ))}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="glass-card p-6 border border-white/10 bg-black/20 backdrop-blur-md rounded-lg">
@@ -45,23 +75,23 @@ const CWVScorecard: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <MetricCard
                     label="Largest Contentful Paint"
-                    value={1200}
+                    value={stats?.avg_lcp ? Math.round(stats.avg_lcp) : 0}
                     unit="ms"
-                    score="good"
+                    score={getScore(stats?.avg_lcp || 0, 2500, 4000)}
                     desc="Time to render main content."
                 />
                 <MetricCard
                     label="Cumulative Layout Shift"
-                    value={0.05}
+                    value={stats?.avg_cls ? parseFloat(stats.avg_cls.toFixed(3)) : 0}
                     unit=""
-                    score="good"
+                    score={getScore(stats?.avg_cls || 0, 0.1, 0.25)}
                     desc="Visual stability of the page."
                 />
                 <MetricCard
                     label="Interaction to Next Paint"
-                    value={150}
+                    value={stats?.avg_inp ? Math.round(stats.avg_inp) : 0}
                     unit="ms"
-                    score="good"
+                    score={getScore(stats?.avg_inp || 0, 200, 500)}
                     desc="Responsiveness to user input."
                 />
             </div>

@@ -27,7 +27,7 @@ class EngineClient
         ];
 
         foreach ($endpoints as $url) {
-            $response = wp_remote_get("$url/debug/health", ['timeout' => 1]);
+            $response = wp_remote_get("$url/health", ['timeout' => 1]);
             if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
                 set_transient('apex_engine_url', $url, HOUR_IN_SECONDS);
                 self::$discovered_url = $url;

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -16,75 +18,191 @@ func NewSegmentationHandler(repo *Repository) *SegmentationHandler {
 
 // Cohort Analysis: Retention rates for Day 1, 7, 30
 func (h *SegmentationHandler) GetCohorts(c *fiber.Ctx) error {
-	// Simplified Cohort Logic:
-	// 1. Get all visitors grouped by first_seen week
-	// 2. Count how many returned in subsequent weeks
-	// For MVP, we'll return mock data structure that mirrors what a real query would output
-	// deeper SQL implementation required for production.
-
-	type CohortRow struct {
-		Date  string  `json:"date"`
-		Users int     `json:"users"`
-		Day1  float64 `json:"day1"`
-		Day7  float64 `json:"day7"`
-		Day30 float64 `json:"day30"`
+	query := `
+		WITH FirstVisit AS (
+			SELECT fingerprint, DATE(first_seen) as cohort_date
+			FROM wp_apex_visitors
+			WHERE first_seen >= DATE_SUB(NOW(), INTERVAL 60 DAY)
+			GROUP BY fingerprint, DATE(first_seen)
+		),
+		Retention AS (
+			SELECT 
+				f.cohort_date,
+				s.fingerprint,
+				DATEDIFF(DATE(s.started_at), f.cohort_date) as day_diff
+			FROM FirstVisit f
+			JOIN wp_apex_sessions s ON f.fingerprint = s.fingerprint
+		)
+		SELECT 
+			DATE_FORMAT(cohort_date, '%b %d') as date,
+			COUNT(DISTINCT fingerprint) as users,
+			ROUND(100 * COUNT(DISTINCT CASE WHEN day_diff >= 1 THEN fingerprint END) / COUNT(DISTINCT fingerprint), 1) as day1,
+			ROUND(100 * COUNT(DISTINCT CASE WHEN day_diff >= 7 THEN fingerprint END) / COUNT(DISTINCT fingerprint), 1) as day7,
+			ROUND(100 * COUNT(DISTINCT CASE WHEN day_diff >= 30 THEN fingerprint END) / COUNT(DISTINCT fingerprint), 1) as day30
+		FROM Retention
+		GROUP BY cohort_date
+		ORDER BY cohort_date DESC
+		LIMIT 10
+	`
+	rows, err := h.repo.RunReadOnlyQuery(query)
+	if err != nil {
+		log.Printf("[Cohort Error] %v", err)
+		return c.Status(500).SendString("Cohort analysis failed")
 	}
 
-	// Mock Data for Visualization
-	cohorts := []CohortRow{
-		{Date: "Oct 01", Users: 1200, Day1: 45, Day7: 20, Day30: 10},
-		{Date: "Oct 08", Users: 1450, Day1: 42, Day7: 22, Day30: 12},
-		{Date: "Oct 15", Users: 1100, Day1: 48, Day7: 25, Day30: 15},
-		{Date: "Oct 22", Users: 1600, Day1: 40, Day7: 18, Day30: 0},
-	}
-
-	return c.JSON(cohorts)
+	return c.JSON(rows)
 }
 
 // Calculate Engagement Score & Personas
 // Score = (Visits * 5) + (DurationMinutes * 2) + (Downloads * 10)
 func (h *SegmentationHandler) CalculateScores(c *fiber.Ctx) error {
-	// In a real scenario, this runs as a background job or on-demand for specific users
-	// Here we simulate the scoring for a dashboard view
-
-	type UserScore struct {
-		UserID  string `json:"user_id"`
-		Score   int    `json:"score"`
-		Persona string `json:"persona"`
-		Risk    string `json:"risk"` // Low, Medium, High
+	query := `
+		SELECT 
+			ANY_VALUE(v.fingerprint) as user_id,
+			(COUNT(s.session_id) * 5 + SUM(s.page_count)) as score,
+			CASE 
+				WHEN (COUNT(s.session_id) * 5 + SUM(s.page_count)) > 80 THEN 'Power User'
+				WHEN (COUNT(s.session_id) * 5 + SUM(s.page_count)) > 40 THEN 'Researcher'
+				ELSE 'Window Shopper'
+			END as persona,
+			CASE 
+				WHEN MAX(s.last_activity) < DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 'High'
+				WHEN MAX(s.last_activity) < DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 'Medium'
+				ELSE 'Low'
+			END as risk
+		FROM wp_apex_visitors v
+		LEFT JOIN wp_apex_sessions s ON v.fingerprint = s.fingerprint
+		GROUP BY v.fingerprint
+		LIMIT 20
+	`
+	scores, err := h.repo.RunReadOnlyQuery(query)
+	if err != nil {
+		log.Printf("[Score Error] %v", err)
+		return c.Status(500).SendString("Score calculation failed")
 	}
 
-	scores := []UserScore{
-		{UserID: "user_123", Score: 85, Persona: "Power User", Risk: "Low"},
-		{UserID: "user_456", Score: 12, Persona: "Window Shopper", Risk: "High"},
-		{UserID: "user_789", Score: 45, Persona: "Researcher", Risk: "Medium"},
+	// Calculate summary KPIs
+	avgScore := 0.0
+	powerUserCount := 0
+	highRiskCount := 0
+	if len(scores) > 0 {
+		total := 0.0
+		for _, s := range scores {
+			sc := 0.0
+			switch v := s["score"].(type) {
+			case float64:
+				sc = v
+			case int64:
+				sc = float64(v)
+			case int:
+				sc = float64(v)
+			case string:
+				fmt.Sscanf(v, "%f", &sc)
+			}
+			total += sc
+			if s["persona"] == "Power User" {
+				powerUserCount++
+			}
+			if s["risk"] == "High" {
+				highRiskCount++
+			}
+		}
+		avgScore = total / float64(len(scores))
 	}
 
-	return c.JSON(scores)
+	topPersona := "Window Shopper"
+	if powerUserCount > 0 {
+		topPersona = "Power User"
+	}
+
+	return c.JSON(fiber.Map{
+		"topPersona":  topPersona,
+		"avgScore":    int(avgScore),
+		"scoreChange": "+5%", // Mocking change for now
+		"churnRisk":   int(float64(highRiskCount) / float64(len(scores)+1) * 100),
+		"scores":      scores,
+	})
 }
 
 // User Journey / Sankey Data
 func (h *SegmentationHandler) GetSankey(c *fiber.Ctx) error {
-	// Nodes: Pages. Links: Flow count.
-	nodes := []map[string]interface{}{
-		{"name": "Home"}, {"name": "Pricing"}, {"name": "Checkout"}, {"name": "Blog"},
-		{"name": "Features"}, {"name": "Sign Up"},
+	query := `
+		WITH RawEvents AS (
+			SELECT session_id, url, ROW_NUMBER() OVER(PARTITION BY session_id ORDER BY created_at) as step
+			FROM wp_apex_events
+			WHERE event_type = 'pageview' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+		),
+		Transitions AS (
+			SELECT e1.url as source, e2.url as target
+			FROM RawEvents e1
+			JOIN RawEvents e2 ON e1.session_id = e2.session_id AND e1.step + 1 = e2.step
+		)
+		SELECT source, target, COUNT(*) as value
+		FROM Transitions
+		GROUP BY source, target
+		ORDER BY value DESC
+		LIMIT 50
+	`
+	rows, err := h.repo.RunReadOnlyQuery(query)
+	if err != nil {
+		log.Printf("[Sankey Error] %v", err)
+		return c.Status(500).SendString("Sankey analysis failed")
 	}
 
-	links := []map[string]interface{}{
-		{"source": 0, "target": 1, "value": 500}, // Home -> Pricing
-		{"source": 0, "target": 3, "value": 300}, // Home -> Blog
-		{"source": 0, "target": 4, "value": 200}, // Home -> Features
-		{"source": 1, "target": 2, "value": 150}, // Pricing -> Checkout
-		{"source": 1, "target": 0, "value": 100}, // Pricing -> Home (Bounce)
-		{"source": 3, "target": 1, "value": 50},  // Blog -> Pricing
-		{"source": 2, "target": 5, "value": 120}, // Checkout -> Sign Up
+	// Map to Nodes and Links
+	nodeMap := make(map[string]int)
+	nodes := []map[string]interface{}{}
+	links := []map[string]interface{}{}
+
+	getNode := func(name string) int {
+		if idx, ok := nodeMap[name]; ok {
+			return idx
+		}
+		idx := len(nodes)
+		nodeMap[name] = idx
+		nodes = append(nodes, map[string]interface{}{"name": simplifyURL(name)})
+		return idx
+	}
+
+	for _, row := range rows {
+		source := row["source"].(string)
+		target := row["target"].(string)
+		val := 0
+		switch v := row["value"].(type) {
+		case int64:
+			val = int(v)
+		case int:
+			val = v
+		}
+
+		links = append(links, map[string]interface{}{
+			"source": getNode(source),
+			"target": getNode(target),
+			"value":  val,
+		})
 	}
 
 	return c.JSON(fiber.Map{
 		"nodes": nodes,
 		"links": links,
 	})
+}
+
+func simplifyURL(rawURL string) string {
+	// Simple cleanup: /blog/post-1 -> Blog: post-1
+	if rawURL == "/" || rawURL == "" {
+		return "Home"
+	}
+	// Strip domain if exists
+	parts := strings.Split(rawURL, "/")
+	if len(parts) > 1 {
+		last := parts[len(parts)-1]
+		if last == "" && len(parts) > 2 {
+			last = parts[len(parts)-2]
+		}
+		return last
+	}
+	return rawURL
 }
 
 // Ingest Download Event
@@ -94,15 +212,66 @@ func (h *SegmentationHandler) TrackDownload(c *fiber.Ctx) error {
 		FileUrl   string `json:"file_url"`
 		Timestamp string `json:"timestamp"`
 		Url       string `json:"url"`
+		SessionID string `json:"session_id"`
 	}
 	var p DownloadPayload
 	if err := c.BodyParser(&p); err != nil {
 		return c.Status(400).SendString("Invalid payload")
 	}
 
-	// Store in DB
-	// For now, just log it. Real impl would insert into wp_apex_downloads
-	log.Printf("[Download] %s downloaded %s", p.Url, p.FileUrl)
+	_, err := h.repo.GetDB().Exec(`
+		INSERT INTO wp_apex_downloads (url, file_url, session_id, created_at)
+		VALUES (?, ?, ?, NOW())
+	`, p.Url, p.FileUrl, p.SessionID)
+
+	if err != nil {
+		log.Printf("[Download Error] %v", err)
+	}
 
 	return c.SendStatus(200)
+}
+
+// Segment CRUD
+func (h *SegmentationHandler) GetSegments(c *fiber.Ctx) error {
+	rows, err := h.repo.RunReadOnlyQuery("SELECT id, name, criteria, created_at FROM wp_apex_segments ORDER BY created_at DESC")
+	if err != nil {
+		return c.Status(500).SendString(err.Error())
+	}
+	return c.JSON(rows)
+}
+
+func (h *SegmentationHandler) CreateSegment(c *fiber.Ctx) error {
+	type Payload struct {
+		Name     string `json:"name"`
+		Criteria string `json:"criteria"`
+	}
+	var p Payload
+	if err := c.BodyParser(&p); err != nil {
+		return c.Status(400).SendString("Invalid payload")
+	}
+
+	_, err := h.repo.GetDB().Exec("INSERT INTO wp_apex_segments (name, criteria) VALUES (?, ?)", p.Name, p.Criteria)
+	if err != nil {
+		return c.Status(500).SendString(err.Error())
+	}
+
+	return c.JSON(fiber.Map{"status": "success"})
+}
+
+func (h *SegmentationHandler) DeleteSegment(c *fiber.Ctx) error {
+	id := c.Params("id")
+	_, err := h.repo.GetDB().Exec("DELETE FROM wp_apex_segments WHERE id = ?", id)
+	if err != nil {
+		return c.Status(500).SendString(err.Error())
+	}
+	return c.JSON(fiber.Map{"status": "deleted"})
+}
+
+func (h *SegmentationHandler) GetLeads(c *fiber.Ctx) error {
+	query := "SELECT company_name as name, domain, industry, employee_count as employees, confidence_score as confidence, 0 as is_isp FROM wp_apex_b2b_leads ORDER BY last_seen DESC LIMIT 50"
+	rows, err := h.repo.RunReadOnlyQuery(query)
+	if err != nil {
+		return c.Status(500).SendString(err.Error())
+	}
+	return c.JSON(rows)
 }

@@ -1,34 +1,46 @@
 import React, { useEffect, useState } from 'react';
-import { Smile, Frown, Meh, Loader } from 'lucide-react';
+import { Smile, Frown, Meh, Loader2 } from 'lucide-react';
+import { metricsApi } from '../../../services/api';
 
-const SentimentGauge: React.FC = () => {
-    const [stats, setStats] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
+interface SentimentGaugeProps {
+    stats?: any;
+    loading?: boolean;
+}
+
+const SentimentGauge: React.FC<SentimentGaugeProps> = ({ stats: propStats, loading: propLoading }) => {
+    const [stats, setStats] = useState<any>(propStats || null);
+    const [loading, setLoading] = useState(propLoading !== undefined ? propLoading : (propStats ? false : true));
 
     useEffect(() => {
-        // @ts-ignore
-        const apiRoot = window.apexConfig?.tunnel_url || '/apex/v1/tunnel';
-
-        fetch(`${apiRoot}?path=/v1/social/stats`)
-            .then(res => res.json())
-            .then(data => {
+        if (propStats) {
+            setStats(propStats);
+            setLoading(propLoading || false);
+            return;
+        }
+        const load = async () => {
+            try {
+                const data = await metricsApi.getSocialStats();
                 setStats(data);
+            } catch (e) {
+                console.error(e);
+            } finally {
                 setLoading(false);
-            })
-            .catch(() => setLoading(false));
-    }, []);
+            }
+        };
+        load();
+    }, [propStats, propLoading]);
 
     if (loading) return (
-        <div className="glass-card p-6 border border-white/10 bg-black/20 backdrop-blur-md rounded-lg flex items-center justify-center">
-            <Loader className="animate-spin text-[#00ff9d]" />
+        <div className="glass-card p-6 border border-white/10 bg-black/20 backdrop-blur-md rounded-lg flex items-center justify-center min-h-[200px]">
+            <Loader2 className="animate-spin text-[#00ff9d]" />
         </div>
     );
 
     if (!stats) return null;
 
-    const total = stats.total || 1;
-    const posPercent = (stats.positive / total) * 100;
-    const negPercent = (stats.negative / total) * 100;
+    const total = Number(stats.total) || 1;
+    const posPercent = (Number(stats.positive) / total) * 100;
+    const negPercent = (Number(stats.negative) / total) * 100;
 
     return (
         <div className="glass-card p-6 border border-white/10 bg-black/20 backdrop-blur-md rounded-lg">

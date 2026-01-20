@@ -33,12 +33,25 @@ type FormSummary struct {
 }
 
 func (h *FormStatsHandler) GetStats(c *fiber.Ctx) error {
-	// Re-do logic with correct understanding
-	return h.getStatsCorrect(c)
-}
+	rangeParam := c.Query("range", "7d")
 
-func (h *FormStatsHandler) getStatsCorrect(c *fiber.Ctx) error {
-	rows, err := h.repo.db.Query("SELECT form_id, payload FROM wp_apex_form_analytics ORDER BY created_at DESC LIMIT 1000")
+	var days int
+	switch rangeParam {
+	case "30d":
+		days = 30
+	case "90d":
+		days = 90
+	default:
+		days = 7
+	}
+
+	rows, err := h.repo.db.Query(`
+		SELECT form_id, payload 
+		FROM wp_apex_form_analytics 
+		WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+		ORDER BY created_at DESC 
+		LIMIT 1000
+	`, days)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

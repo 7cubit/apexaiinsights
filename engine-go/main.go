@@ -109,11 +109,25 @@ func main() {
 		app.Post("/v1/automation/rules", autoHandler.CreateRule)
 		app.Get("/v1/automation/rules", autoHandler.GetRules)
 		app.Delete("/v1/automation/rules/:id", autoHandler.DeleteRule)
+		app.Post("/v1/automation/rules/:id/test", autoHandler.TestRule)
 		app.Post("/v1/automation/event", autoHandler.IngestEvent) // Internal Event bus
 
 		// Setup Form Stats Aggregation (Phase 9)
 		formStatsHandler := NewFormStatsHandler(repo)
 		app.Get("/v1/stats/forms", formStatsHandler.GetStats)
+
+		// KPI Stats Endpoint (Production Readiness)
+		kpiHandler := NewKPIHandler(repo)
+		app.Get("/v1/stats/kpi", kpiHandler.GetKPIStats)
+
+		// Content Stats Endpoint (Production Readiness)
+		contentStatsHandler := NewContentStatsHandler(repo)
+		app.Get("/v1/stats/content", contentStatsHandler.GetContentStats)
+
+		// WooCommerce Endpoints (Production Readiness)
+		wooHandler := NewWooCommerceHandler(repo)
+		app.Get("/v1/woocommerce/stats", wooHandler.GetWooStats)
+		app.Get("/v1/woocommerce/velocity", wooHandler.GetProductVelocity)
 	}
 
 	// Start Background Jobs
@@ -149,20 +163,25 @@ func main() {
 	app.Get("/v1/segmentation/cohorts", segmentHandler.GetCohorts)
 	app.Get("/v1/segmentation/scores", segmentHandler.CalculateScores)
 	app.Get("/v1/segmentation/sankey", segmentHandler.GetSankey)
-	app.Post("/v1/telemetry/download", segmentHandler.TrackDownload)
+	app.Get("/v1/segmentation/segments", segmentHandler.GetSegments)
+	app.Get("/v1/segmentation/leads", segmentHandler.GetLeads)
+	app.Post("/v1/segmentation/segments", segmentHandler.CreateSegment)
+	app.Delete("/v1/segmentation/segments/:id", segmentHandler.DeleteSegment)
+	app.Post("/v1/segmentation/downloads", segmentHandler.TrackDownload)
 
 	// Phase 13: Social & Viral
 	socialHandler := NewSocialHandler(repo)
-	campaignHandler := NewCampaignHandler(repo)
 	app.Post("/v1/social/ingest", socialHandler.IngestSocialMetrics)
-	app.Post("/v1/social/refresh", socialHandler.FetchMentions) // New endpoint
+	app.Get("/v1/social/refresh", socialHandler.FetchMentions)
 	app.Get("/v1/social/stats", socialHandler.GetSocialStats)
-	app.Get("/v1/social/dark", socialHandler.DetectDarkSocial)
+	app.Get("/v1/social/dark-social", socialHandler.DetectDarkSocial)
+
+	campaignHandler := NewCampaignHandler(repo)
 	app.Get("/v1/campaigns/stats", campaignHandler.GetCampaignStats)
-	app.Post("/v1/campaigns/build", campaignHandler.GenerateUTM)
+	app.Post("/v1/campaigns/generate", campaignHandler.GenerateUTM)
 
 	// Phase 14: Performance
-	perfHandler := NewPerformanceHandler(repo)
+	perfHandler := NewPerformanceHandler(repo, os.Getenv("PAGESPEED_API_KEY"))
 	app.Post("/v1/performance/rum", perfHandler.IngestRUM)
 	app.Get("/v1/performance/stats", perfHandler.GetPerformanceStats)
 	app.Get("/v1/performance/scan", perfHandler.RunPageSpeed)

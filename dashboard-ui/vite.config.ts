@@ -5,6 +5,7 @@ import { resolve } from "path";
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  base: "./",
   build: {
     outDir: "../plugin-core/assets/dist",
     emptyOutDir: true,
@@ -13,14 +14,8 @@ export default defineConfig({
         main: resolve(__dirname, "index.html"),
       },
       output: {
-        // Code splitting for better caching
-        manualChunks: {
-          vendor: ["react", "react-dom", "react-router-dom"],
-          charts: ["recharts"],
-          motion: ["framer-motion"],
-        },
         entryFileNames: "bundle.js",
-        chunkFileNames: "[name]-[hash].js",
+        chunkFileNames: "bundle.js",
         assetFileNames: "style.css",
       },
     },

@@ -2,13 +2,39 @@ import React, { useEffect, useState } from 'react';
 import CWVScorecard from './CWVScorecard';
 import { Database, Gauge, Loader2 } from 'lucide-react';
 
+const ScriptImpactList: React.FC<{ impacts: any[] }> = ({ impacts }) => {
+    if (!impacts || impacts.length === 0) return <div className="text-gray-500 text-sm">No significant script impact detected.</div>;
+
+    return (
+        <div className="space-y-4 w-full">
+            <h4 className="text-sm font-medium text-gray-400 uppercase tracking-widest">Resource Impact Analysis</h4>
+            {impacts.map((impact, i) => (
+                <div key={i} className="flex justify-between items-center p-3 rounded bg-white/5 border border-white/5">
+                    <div className="flex-1 min-w-0 mr-4">
+                        <p className="text-xs text-blue-400 truncate mb-1">{impact.url}</p>
+                        <p className="text-[10px] text-gray-500">{impact.plugin}</p>
+                    </div>
+                    <div className="text-right">
+                        <span className="text-sm font-mono text-red-400">
+                            +{(impact.wasted_bytes / 1024).toFixed(1)} KB
+                        </span>
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+};
+
 const PerformanceAnalytics: React.FC = () => {
     const [psiScore, setPsiScore] = useState<number | null>(null);
+    const [scriptImpacts, setScriptImpacts] = useState<any[]>([]);
     const [loadingPsi, setLoadingPsi] = useState(false);
     const [dbStats, setDbStats] = useState<any>(null);
+    const [isMock, setIsMock] = useState(false);
 
     const runScan = () => {
         setLoadingPsi(true);
+        setIsMock(false);
         // @ts-ignore
         const apiRoot = window.apexConfig?.tunnel_url || '/apex/v1/tunnel';
 
@@ -19,6 +45,8 @@ const PerformanceAnalytics: React.FC = () => {
             .then(res => res.json())
             .then(data => {
                 if (data.score) setPsiScore(Math.round(data.score));
+                if (data.script_impact) setScriptImpacts(data.script_impact);
+                if (data.mock) setIsMock(true);
             })
             .catch(err => console.error(err))
             .finally(() => setLoadingPsi(false));
@@ -44,14 +72,21 @@ const PerformanceAnalytics: React.FC = () => {
                         Real-time performance monitoring and optimization.
                     </p>
                 </div>
-                <button
-                    onClick={runScan}
-                    disabled={loadingPsi}
-                    className="flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-md text-sm font-medium text-white transition-colors"
-                >
-                    {loadingPsi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Gauge className="mr-2 h-4 w-4" />}
-                    Run Lighthouse Scan
-                </button>
+                <div className="flex items-center gap-4">
+                    {isMock && (
+                        <span className="text-xs px-2 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded">
+                            Demo Mode: PAGESPEED_API_KEY missing
+                        </span>
+                    )}
+                    <button
+                        onClick={runScan}
+                        disabled={loadingPsi}
+                        className="flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-md text-sm font-medium text-white transition-colors"
+                    >
+                        {loadingPsi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Gauge className="mr-2 h-4 w-4" />}
+                        Run Lighthouse Scan
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -107,11 +142,17 @@ const PerformanceAnalytics: React.FC = () => {
                                 Healthy
                             </span>
                         </div>
+                        {dbStats?.last_updated && (
+                            <div className="pt-2 text-[10px] text-gray-600 text-right italic">
+                                Last updated: {new Date(dbStats.last_updated).toLocaleTimeString()}
+                                {dbStats.cached && " (Cached)"}
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 <div className="glass-card p-6 border border-white/10 bg-black/20 backdrop-blur-md rounded-lg md:col-span-2 flex items-center justify-center">
-                    <p className="text-gray-500 text-sm">Resource Impact Analysis Coming Soon</p>
+                    <ScriptImpactList impacts={scriptImpacts} />
                 </div>
             </div>
         </div>

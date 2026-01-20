@@ -1,33 +1,68 @@
 import { useState, useEffect } from 'react';
-import { Terminal, Zap, Activity, Globe, Power } from 'lucide-react';
+import { Terminal, Zap, Activity, Globe, Power, Loader2 } from 'lucide-react';
 
 export default function GodModeAnalytics() {
     const [instances, setInstances] = useState([]);
     const [selectedInstance, setSelectedInstance] = useState<any>(null);
     const [command, setCommand] = useState('');
     const [loading, setLoading] = useState(false);
+    const [instancesLoading, setInstancesLoading] = useState(true);
+
+    // @ts-ignore
+    const apiRoot = window.apexConfig?.tunnel_url || '/apex/v1/tunnel';
 
     useEffect(() => {
         fetchInstances();
-        const interval = setInterval(fetchInstances, 10000); // Poll status
-        return () => clearInterval(interval);
+
+        // Only poll when the tab is visible
+        let interval: ReturnType<typeof setInterval> | null = null;
+
+        const startPolling = () => {
+            if (interval) clearInterval(interval);
+            interval = setInterval(fetchInstances, 10000);
+        };
+
+        const stopPolling = () => {
+            if (interval) {
+                clearInterval(interval);
+                interval = null;
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                stopPolling();
+            } else {
+                fetchInstances(); // Refresh immediately when tab becomes visible
+                startPolling();
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        if (!document.hidden) startPolling();
+
+        return () => {
+            stopPolling();
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
     }, []);
 
     const fetchInstances = async () => {
         try {
-            const res = await fetch('http://localhost:8080/v1/god/instances');
+            const res = await fetch(`${apiRoot}?path=/v1/god/instances`);
             const data = await res.json();
             setInstances(data || []);
         } catch (e) {
             console.error("Failed to fetch instances", e);
         }
+        setInstancesLoading(false);
     };
 
     const sendCommand = async () => {
         if (!selectedInstance || !command) return;
         setLoading(true);
         try {
-            await fetch('http://localhost:8080/v1/god/command', {
+            await fetch(`${apiRoot}?path=/v1/god/command`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -47,8 +82,8 @@ export default function GodModeAnalytics() {
     const handleGlobalUpdate = async () => {
         if (!confirm("Are you sure you want to trigger plugin updates for ALL instances?")) return;
         // Loop through all (naive approach)
-        instances.forEach(async (inst: any) => {
-            await fetch('http://localhost:8080/v1/god/command', {
+        for (const inst of instances as any[]) {
+            await fetch(`${apiRoot}?path=/v1/god/command`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -57,7 +92,7 @@ export default function GodModeAnalytics() {
                     payload: 'latest'
                 })
             });
-        });
+        }
         alert("Global update queued.");
     };
 
@@ -72,7 +107,8 @@ export default function GodModeAnalytics() {
                 </div>
                 <button
                     onClick={handleGlobalUpdate}
-                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-lg transition-all"
+                    disabled={instances.length === 0}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-lg transition-all disabled:opacity-50"
                 >
                     <Zap className="w-4 h-4" />
                     <span className="font-medium">Update All Plugins</span>
@@ -82,7 +118,11 @@ export default function GodModeAnalytics() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Instance Grid */}
                 <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {instances.length === 0 ? (
+                    {instancesLoading ? (
+                        <div className="col-span-full p-8 flex items-center justify-center">
+                            <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+                        </div>
+                    ) : instances.length === 0 ? (
                         <div className="col-span-full p-8 text-center text-slate-500 border border-slate-700 rounded-xl border-dashed">
                             No instances connected yet. <br />
                             <span className="text-xs">Configure plugins to point to /v1/god/connect</span>
@@ -146,9 +186,9 @@ export default function GodModeAnalytics() {
                         <button
                             onClick={sendCommand}
                             disabled={!selectedInstance || loading}
-                            className="p-2 bg-purple-600 hover:bg-purple-500 text-white rounded-md disabled:opacity-50"
+                            className="p-2 bg-purple-600 hover:bg-purple-500 text-white rounded-md disabled:opacity-50 flex items-center justify-center"
                         >
-                            <Power className="w-4 h-4" />
+                            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
                         </button>
                     </div>
 

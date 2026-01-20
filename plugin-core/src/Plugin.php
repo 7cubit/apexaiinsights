@@ -179,6 +179,18 @@ class Plugin
 
         ?>
         <style>
+            /* Instant dark background to prevent white flash - High Priority */
+            html,
+            body,
+            #wpwrap,
+            #wpcontent,
+            #wpbody,
+            #wpbody-content,
+            .wrap {
+                background: #0a0a0a !important;
+                color: #fff !important;
+            }
+
             #wpcontent {
                 padding-left: 0 !important;
             }
@@ -189,6 +201,7 @@ class Plugin
 
             .wrap {
                 margin: 0 !important;
+                background: #0a0a0a !important;
             }
 
             #wpfooter {
@@ -216,6 +229,41 @@ class Plugin
                 #wpbody-content>.wrap {
                     height: calc(100vh - 46px);
                 }
+            }
+
+            /* Loader Styling */
+            #apex-dashboard-root .apex-loader {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 80vh;
+                gap: 20px;
+                color: #fff;
+            }
+
+            #apex-dashboard-root .apex-loader-spinner {
+                width: 54px;
+                height: 54px;
+                border: 4px solid rgba(255, 255, 255, 0.05);
+                border-top-color: #10b981;
+                /* Emerald-500 */
+                border-radius: 50%;
+                animation: apex-spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            }
+
+            @keyframes apex-spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            #apex-dashboard-root .apex-loader-text {
+                color: #64748b;
+                font-size: 15px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                font-weight: 500;
+                letter-spacing: -0.01em;
             }
         </style>
         <?php
@@ -438,9 +486,9 @@ class Plugin
         wp_enqueue_script(
             'apex-dashboard',
             plugins_url('assets/dist/bundle.js', dirname(__DIR__) . '/apex-ai-insights.php'),
-            [], // Remove wp-element to avoid conflicts
+            [],
             APEX_AI_VERSION,
-            true
+            ['in_footer' => true, 'strategy' => 'defer']
         );
 
         wp_enqueue_style(
@@ -466,8 +514,30 @@ class Plugin
             ],
             'gdpr' => [
                 'mode' => get_option('apex_gdpr_mode', false),
+            ],
+            // Pre-fetched cached stats for instant UI rendering
+            'initialKPI' => get_transient('apex_api_cache_' . md5('/v1/stats/kpi?range=7d')),
+            'initialLive' => [
+                'active_users' => (int) $this->get_live_session_count()
             ]
         ]);
+    }
+
+    /**
+     * Helper to get active session count for pre-fetching
+     */
+    private function get_live_session_count(): int
+    {
+        global $wpdb;
+        $table = $wpdb->prefix . 'apex_sessions';
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table)
+            return 0;
+
+        return (int) $wpdb->get_var("
+            SELECT COUNT(*) 
+            FROM $table 
+            WHERE last_activity > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+        ");
     }
 
     public function render_dashboard(): void

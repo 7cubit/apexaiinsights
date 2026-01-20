@@ -30,6 +30,14 @@ class AutomationController
             }
         ]);
 
+        register_rest_route('apex/v1', '/automation/rules/(?P<id>\d+)/test', [
+            'methods' => 'POST',
+            'callback' => [$this, 'proxy_test_rule'],
+            'permission_callback' => function () {
+                return current_user_can('manage_options');
+            }
+        ]);
+
         // INTERNAL: Send Mail (Called by Go Engine)
         // NOTE: In production, secure this with a secret header/token
         register_rest_route('apex/v1', '/internal/send_mail', [
@@ -69,7 +77,26 @@ class AutomationController
         $id = $request->get_param('id');
         $url = $this->api_root . '/automation/rules/' . $id;
 
-        $response = wp_remote_request($url, ['method' => 'DELETE']);
+        $response = wp_remote_request($url, [
+            'method' => 'DELETE',
+            'timeout' => 10
+        ]);
+
+        if (is_wp_error($response)) {
+            return new \WP_Error('engine_error', $response->get_error_message(), ['status' => 500]);
+        }
+
+        return rest_ensure_response(json_decode(wp_remote_retrieve_body($response), true));
+    }
+
+    public function proxy_test_rule($request)
+    {
+        $id = $request->get_param('id');
+        $url = $this->api_root . '/automation/rules/' . $id . '/test';
+
+        $response = wp_remote_post($url, [
+            'timeout' => 10
+        ]);
 
         if (is_wp_error($response)) {
             return new \WP_Error('engine_error', $response->get_error_message(), ['status' => 500]);

@@ -125,19 +125,20 @@ func (h *AutomationHandler) executeAction(actionType string, config json.RawMess
 
 	switch actionType {
 	case "email":
-		// Use EmailIt API
+		// Try EmailIt First
 		apiKey := os.Getenv("EMAILIT_API_KEY")
-		if apiKey == "" {
-			log.Println("EMAILIT_API_KEY not set, skipping email action")
-			return
+		var err error
+		if apiKey != "" {
+			err = h.sendEmailIt(apiKey, "alerts@apexaiinsights.com", actionCfg.Email, "[Apex Auto-Pilot] Alert", actionCfg.Message)
+			if err == nil {
+				log.Printf("EmailIt Sent to %s", actionCfg.Email)
+				return
+			}
+			log.Printf("EmailIt Failed: %v, falling back to WordPress", err)
 		}
 
-		err := h.sendEmailIt(apiKey, "alerts@apexaiinsights.com", actionCfg.Email, "[Apex Auto-Pilot] Alert", actionCfg.Message)
-		if err != nil {
-			log.Printf("EmailIt Failed: %v", err)
-		} else {
-			log.Printf("EmailIt Sent to %s", actionCfg.Email)
-		}
+		// Fallback to WordPress Internal API
+		h.sendViaWordPress(actionCfg.Email, "[Apex Auto-Pilot] Alert", actionCfg.Message)
 
 	case "webhook":
 		http.Post(actionCfg.Url, "application/json", bytes.NewBuffer(payload))
@@ -192,4 +193,44 @@ func (h *AutomationHandler) sendEmailIt(apiKey, from, to, subject, htmlBody stri
 	}
 
 	return nil
+}
+
+func (h *AutomationHandler) sendViaWordPress(to, subject, message string) {
+	wordpressURL := "http://wp-app/wp-json/apex/v1/internal/send_mail" // Internal Docker URL
+	payload := map[string]string{
+		"to":      to,
+		"subject": subject,
+		"message": message,
+	}
+	body, _ := json.Marshal(payload)
+
+	resp, err := http.Post(wordpressURL, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		log.Printf("WordPress Mail Fallback Failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		log.Printf("WordPress Mail Fallback HTTP Error: %s", resp.Status)
+	} else {
+		log.Printf("WordPress Mail Fallback Sent to %s", to)
+	}
+}
+
+// REST: Test Rule
+func (h *AutomationHandler) TestRule(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var rule AutomationRule
+	err := h.repo.db.QueryRow("SELECT id, name, action_type, action_config FROM wp_apex_automation_rules WHERE id = ?", id).
+		Scan(&rule.ID, &rule.Name, &rule.ActionType, &rule.ActionConfig)
+
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Rule not found"})
+	}
+
+	log.Printf("Testing Rule: %s", rule.Name)
+	go h.executeAction(rule.ActionType, rule.ActionConfig, json.RawMessage(`{"test": true}`))
+
+	return c.JSON(fiber.Map{"status": "test_initiated", "rule": rule.Name})
 }

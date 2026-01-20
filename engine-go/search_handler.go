@@ -79,10 +79,22 @@ func (h *SearchHandler) Ingest404(c *fiber.Ctx) error {
 
 // GetSearchStats aggregates search data for the dashboard
 func (h *SearchHandler) GetSearchStats(c *fiber.Ctx) error {
+	rangeParam := c.Query("range", "7d")
+	var timeFilter string
+	switch rangeParam {
+	case "30d":
+		timeFilter = "AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)"
+	case "90d":
+		timeFilter = "AND created_at > DATE_SUB(NOW(), INTERVAL 90 DAY)"
+	default: // 7d
+		timeFilter = "AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)"
+	}
+
 	// 1. Top Queries
 	rows, err := h.repo.db.Query(`
 		SELECT query, COUNT(*) as count, AVG(result_count) as avg_results 
 		FROM wp_apex_search_analytics 
+		WHERE 1=1 ` + timeFilter + `
 		GROUP BY query 
 		ORDER BY count DESC 
 		LIMIT 10
@@ -97,7 +109,7 @@ func (h *SearchHandler) GetSearchStats(c *fiber.Ctx) error {
 		Count      int     `json:"count"`
 		AvgResults float64 `json:"avg_results"`
 	}
-	var topQueries []SearchStat
+	var topQueries []SearchStat = []SearchStat{} // Ensure empty array instead of nil
 
 	for rows.Next() {
 		var s SearchStat
@@ -110,7 +122,7 @@ func (h *SearchHandler) GetSearchStats(c *fiber.Ctx) error {
 	gapRows, err := h.repo.db.Query(`
 		SELECT query, COUNT(*) as count 
 		FROM wp_apex_search_analytics 
-		WHERE result_count = 0 
+		WHERE result_count = 0 ` + timeFilter + `
 		GROUP BY query 
 		ORDER BY count DESC 
 		LIMIT 10
@@ -124,7 +136,10 @@ func (h *SearchHandler) GetSearchStats(c *fiber.Ctx) error {
 	var gaps []struct {
 		Query string `json:"query"`
 		Count int    `json:"count"`
-	}
+	} = make([]struct {
+		Query string `json:"query"`
+		Count int    `json:"count"`
+	}, 0)
 
 	if gapRows != nil {
 		for gapRows.Next() {
@@ -142,8 +157,9 @@ func (h *SearchHandler) GetSearchStats(c *fiber.Ctx) error {
 	notfoundRows, err := h.repo.db.Query(`
 		SELECT url, referrer, COUNT(*) as count 
 		FROM wp_apex_404_logs 
+		WHERE 1=1 ` + timeFilter + `
 		GROUP BY url, referrer 
-		ORDER BY created_at DESC 
+		ORDER BY count DESC 
 		LIMIT 10
 	`)
 	if err != nil {
@@ -156,7 +172,11 @@ func (h *SearchHandler) GetSearchStats(c *fiber.Ctx) error {
 		URL      string `json:"url"`
 		Referrer string `json:"referrer"`
 		Count    int    `json:"count"`
-	}
+	} = make([]struct {
+		URL      string `json:"url"`
+		Referrer string `json:"referrer"`
+		Count    int    `json:"count"`
+	}, 0)
 
 	if notfoundRows != nil {
 		for notfoundRows.Next() {

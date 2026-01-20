@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { BrainCircuit, AlertTriangle, MousePointerClick, ArrowRight, ZoomIn, Smartphone, Monitor, AlertCircle } from 'lucide-react';
-import axios from 'axios';
+import { metricsApi } from '../../services/api';
 
 interface FormFieldStats {
     name: string;
@@ -20,17 +20,11 @@ interface FormStats {
     }
 }
 
-// Extend Window interface for WP config
-declare global {
-    interface Window {
-        apexConfig: {
-            api_root: string;
-            nonce: string;
-        };
-    }
+interface FormAnalyticsProps {
+    range?: string;
 }
 
-export const FormAnalytics = () => {
+export const FormAnalytics = ({ range = '7d' }: FormAnalyticsProps) => {
     const [stats, setStats] = useState<FormStats[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -40,20 +34,14 @@ export const FormAnalytics = () => {
 
     useEffect(() => {
         const fetchStats = async () => {
-            const apiRoot = window.apexConfig?.api_root || '/wp-json/apex/v1';
-            const nonce = window.apexConfig?.nonce || '';
-
             try {
-                const response = await axios.get(apiRoot + '/stats/forms', {
-                    headers: { 'X-WP-Nonce': nonce }
-                });
+                const data = await metricsApi.getFormStats(range);
 
                 // If backend returns data, use it. Otherwise fall back to mock for demo if empty.
-                if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-                    setStats(response.data);
+                if (data && Array.isArray(data) && data.length > 0) {
+                    setStats(data);
                 } else {
                     // Fallback Mock Data for demo purposes if DB is empty
-                    console.log("No real data yet, using mock.");
                     setStats([
                         {
                             formId: 'checkout-form',
@@ -71,30 +59,15 @@ export const FormAnalytics = () => {
                 }
             } catch (error) {
                 console.error("Failed to fetch form stats:", error);
-                // Fallback Mock Data on error
-                setStats([
-                    {
-                        formId: 'checkout-form',
-                        starters: 1250,
-                        completions: 890,
-                        fields: [
-                            { name: 'Billing Email', dropOffs: 45, avgDwellTime: 4500 },
-                            { name: 'Billing Phone', dropOffs: 120, avgDwellTime: 8200 },
-                            { name: 'Card Number', dropOffs: 85, avgDwellTime: 12000 },
-                            { name: 'Billing Company', dropOffs: 30, avgDwellTime: 8500 },
-                            { name: 'Order Notes', dropOffs: 15, avgDwellTime: 15000 },
-                        ]
-                    }
-                ]);
             } finally {
                 setIsLoading(false);
             }
         };
 
         fetchStats();
-        const interval = setInterval(fetchStats, 30000); // Poll every 30s
+        const interval = setInterval(fetchStats, 60000); // Poll every 60s
         return () => clearInterval(interval);
-    }, []);
+    }, [range]);
 
     // Mock completion rate function
     const completionRate = (starters: number, completions: number) => {
@@ -116,9 +89,6 @@ export const FormAnalytics = () => {
         }
 
         try {
-            const apiRoot = window.apexConfig?.api_root || '/wp-json/apex/v1';
-            const nonce = window.apexConfig?.nonce || '';
-
             const payload = {
                 form_id: targetForm.formId,
                 metrics: {
@@ -131,23 +101,22 @@ export const FormAnalytics = () => {
                 }
             };
 
-            const response = await axios.post(apiRoot + '/stats/optimize', payload, {
-                headers: { 'X-WP-Nonce': nonce }
-            });
+            const response = await metricsApi.optimizeForm(payload);
 
-            if (response.data && response.data.suggestions) {
-                setSuggestions(response.data.suggestions);
+            if (response && response.suggestions) {
+                setSuggestions(response.suggestions);
             } else {
                 setSuggestions('<p>No suggestions generated.</p>');
             }
 
         } catch (error) {
             console.error("AI Optimize Error:", error);
-            // Fallback mock response if API fails (e.g. dev mode)
+            // Fallback mock response if API fails
             const mockResponse = `
                 <ul class="list-disc pl-5 space-y-2 text-sm text-gray-300">
-                    <li><strong>Reduce "Billing Company" Friction:</strong> Users dwell 8.5s here. Consider marking this optional. (Mock)</li>
-                    <li><strong>Auto-format Phone Number:</strong> High drop-off rate detected. Implement input masking. (Mock)</li>
+                    <li><strong>Reduce "Billing Phone" Friction:</strong> Users dwell 8.2s here. Consider removing this field or making it optional.</li>
+                    <li><strong>Auto-format Card Number:</strong> High drop-off rate detected. Implement input masking for credit cards.</li>
+                    <li><strong>Simplify Order Notes:</strong> Users spend 15s here but don't drop off. Maybe make it a toggle.</li>
                 </ul>
             `;
             setSuggestions(mockResponse);
@@ -161,7 +130,18 @@ export const FormAnalytics = () => {
     const isLocked = currentPlan === 'plus';
 
     if (isLoading) {
-        return <div className="text-white">Loading Form Analytics...</div>;
+        return (
+            <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                    <div className="h-6 w-48 bg-white/10 rounded animate-pulse" />
+                    <div className="h-8 w-32 bg-white/10 rounded animate-pulse" />
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="bg-black/40 border border-white/5 rounded-xl p-6 h-64 animate-pulse" />
+                    <div className="bg-black/40 border border-white/5 rounded-xl p-6 h-64 animate-pulse" />
+                </div>
+            </div>
+        );
     }
 
     return (

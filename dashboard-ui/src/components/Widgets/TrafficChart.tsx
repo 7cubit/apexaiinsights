@@ -1,6 +1,7 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from 'recharts';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Activity, Zap } from 'lucide-react';
+import { metricsApi } from '../../services/api';
 
 interface TrafficData {
     time: string;
@@ -16,47 +17,43 @@ interface TrafficChartProps {
 
 type ChartMode = 'apex' | 'ga4' | 'hybrid';
 
-const getDataForRange = (range: string): TrafficData[] => {
-    // Mock data with "Truth Gap" logic: Apex always detects more (recovered ad-block)
-    const factor = 0.85; // GA4 typically sees 15% less
-    
-    switch (range) {
-        case '30d':
-            return [
-                { time: 'Week 1', visitors: 2400, ga4Users: Math.floor(2400 * factor), gscImpressions: 8000, gscClicks: 240 },
-                { time: 'Week 2', visitors: 3200, ga4Users: Math.floor(3200 * factor), gscImpressions: 11000, gscClicks: 310 },
-                { time: 'Week 3', visitors: 2800, ga4Users: Math.floor(2800 * factor), gscImpressions: 9500, gscClicks: 280 },
-                { time: 'Week 4', visitors: 4500, ga4Users: Math.floor(4500 * factor), gscImpressions: 15000, gscClicks: 420 },
-            ];
-        case '90d':
-            return [
-                { time: 'Month 1', visitors: 12000, ga4Users: Math.floor(12000 * factor), gscImpressions: 45000, gscClicks: 1200 },
-                { time: 'Month 2', visitors: 15000, ga4Users: Math.floor(15000 * factor), gscImpressions: 55000, gscClicks: 1600 },
-                { time: 'Month 3', visitors: 22000, ga4Users: Math.floor(22000 * factor), gscImpressions: 75000, gscClicks: 2100 },
-            ];
-        default: // 7d
-            return [
-                { time: 'Mon', visitors: 820, ga4Users: 710, gscImpressions: 2400, gscClicks: 72 },
-                { time: 'Tue', visitors: 932, ga4Users: 805, gscImpressions: 2800, gscClicks: 84 },
-                { time: 'Wed', visitors: 901, ga4Users: 780, gscImpressions: 2600, gscClicks: 78 },
-                { time: 'Thu', visitors: 934, ga4Users: 810, gscImpressions: 3100, gscClicks: 92 },
-                { time: 'Fri', visitors: 1290, ga4Users: 1110, gscImpressions: 4200, gscClicks: 140 },
-                { time: 'Sat', visitors: 1330, ga4Users: 1150, gscImpressions: 4500, gscClicks: 150 },
-                { time: 'Sun', visitors: 1320, ga4Users: 1140, gscImpressions: 4300, gscClicks: 145 },
-            ];
-    }
-};
-
 export default function TrafficChart({ range = '7d' }: TrafficChartProps) {
-    const data = getDataForRange(range);
+    const [data, setData] = useState<TrafficData[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [mode, setMode] = useState<ChartMode>('hybrid');
+    const [showGSC, setShowGSC] = useState(false);
+
+    useEffect(() => {
+        const fetchTraffic = async () => {
+            setIsLoading(true);
+            try {
+                const result = await metricsApi.getTrafficStats(range);
+                setData(result.data || []);
+            } catch (error) {
+                console.error('Failed to fetch traffic data:', error);
+                // Fallback to mock data on error
+                setData([
+                    { time: 'Mon', visitors: 820, ga4Users: 710, gscImpressions: 2400, gscClicks: 72 },
+                    { time: 'Tue', visitors: 932, ga4Users: 805, gscImpressions: 2800, gscClicks: 84 },
+                    { time: 'Wed', visitors: 901, ga4Users: 780, gscImpressions: 2600, gscClicks: 78 },
+                    { time: 'Thu', visitors: 934, ga4Users: 810, gscImpressions: 3100, gscClicks: 92 },
+                    { time: 'Fri', visitors: 1290, ga4Users: 1110, gscImpressions: 4200, gscClicks: 140 },
+                    { time: 'Sat', visitors: 1330, ga4Users: 1150, gscImpressions: 4500, gscClicks: 150 },
+                    { time: 'Sun', visitors: 1320, ga4Users: 1140, gscImpressions: 4300, gscClicks: 145 },
+                ]);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchTraffic();
+    }, [range]);
+
     // Transform data for range shading
     const chartData = data.map(d => ({
         ...d,
         truthGap: [d.ga4Users, d.visitors]
     }));
-
-    const [mode, setMode] = useState<ChartMode>('hybrid');
-    const [showGSC, setShowGSC] = useState(false);
 
     const rangeLabel = range === '7d' ? 'Last 7 Days' : range === '30d' ? 'Last 30 Days' : 'Last 90 Days';
 
@@ -77,7 +74,7 @@ export default function TrafficChart({ range = '7d' }: TrafficChartProps) {
                     </h3>
                     <p className="text-gray-400 text-sm">{rangeLabel}</p>
                 </div>
-                
+
                 <div className="flex items-center gap-3 self-end">
                     {/* Mode Toggle [Apex | GA4 | HYBRID] */}
                     <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
@@ -112,7 +109,15 @@ export default function TrafficChart({ range = '7d' }: TrafficChartProps) {
                 </div>
             </div>
 
-            <div className="flex-1 w-full h-full">
+            <div className="flex-1 w-full h-full relative">
+                {isLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0a0a0a]/50 backdrop-blur-sm">
+                        <div className="flex flex-col items-center gap-3">
+                            <div className="w-10 h-10 border-4 border-neon-green/20 border-t-neon-green rounded-full animate-spin"></div>
+                            <span className="text-neon-green text-xs font-medium animate-pulse">Synchronizing Analytics...</span>
+                        </div>
+                    </div>
+                )}
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <defs>
@@ -154,7 +159,7 @@ export default function TrafficChart({ range = '7d' }: TrafficChartProps) {
                             }}
                             itemStyle={{ fontSize: '12px' }}
                         />
-                        
+
                         {/* Hybrid Shading (The Gap) */}
                         {mode === 'hybrid' && (
                             <Area
@@ -220,7 +225,7 @@ export default function TrafficChart({ range = '7d' }: TrafficChartProps) {
                 </div>
                 {mode === 'hybrid' && (
                     <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-neon-green/80">
-                         <div className="w-3 h-3 bg-neon-green/20 border border-neon-green/40 rounded-sm"></div>
+                        <div className="w-3 h-3 bg-neon-green/20 border border-neon-green/40 rounded-sm"></div>
                         The Truth Gap (Recovered)
                     </div>
                 )}

@@ -101,25 +101,26 @@ function App() {
   // In a real app, this would come from a Context or API
   const [userRole] = useState<"admin" | "shop_manager" | "editor">("admin");
   const [activeTab, setActiveTab] = useState(() => {
-    // Priority: 1. Hash, 2. WP page param, 3. Default
-    const hash = window.location.hash.replace(/^#\/?/, "");
-    if (hash) return hash;
-
+    // Priority: 1. WP page param (for submenu navigation), 2. Hash, 3. Default
     const params = new URLSearchParams(window.location.search);
     const page = params.get("page") || "";
+
     let tab = "overview";
-    
+
+    // First, check the WP page parameter (this is set by WordPress submenu clicks)
     if (page === "apex-ai-insights") {
       tab = "overview";
     } else if (page.startsWith("apex-ai-insights-")) {
       tab = page.replace("apex-ai-insights-", "");
+    } else {
+      // Fall back to hash if no WP page param
+      const hash = window.location.hash.replace(/^#\/?/, "");
+      if (hash) tab = hash;
     }
-    
-    // Set hash to enable instant navigation on subsequent submenu clicks
-    if (!window.location.hash) {
-      window.history.replaceState(null, "", window.location.pathname + window.location.search + "#" + tab);
-    }
-    
+
+    // Sync hash to enable instant navigation within the SPA
+    window.history.replaceState(null, "", window.location.pathname + window.location.search + "#" + tab);
+
     return tab;
   });
   const [dateRange, setDateRange] = useState("7d");
@@ -145,6 +146,49 @@ function App() {
       setActiveTab("settings");
     }
   }, []);
+
+  // Intercept WordPress submenu clicks for instant SPA navigation
+  useEffect(() => {
+    const handleSubmenuClick = (e: MouseEvent) => {
+      const target = e.target as HTMLAnchorElement;
+      const link = target.closest('a[href*="page=apex-ai-insights"]');
+
+      if (link && link instanceof HTMLAnchorElement) {
+        const href = link.getAttribute('href') || '';
+        const pageMatch = href.match(/page=apex-ai-insights(-([a-z]+))?/);
+
+        if (pageMatch) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const tab = pageMatch[2] || 'overview';
+          setActiveTab(tab);
+
+          // Update URL without reload
+          window.history.pushState(null, '', href + '#' + tab);
+
+          // Update active menu styling
+          document.querySelectorAll('#adminmenu .wp-submenu li').forEach(li => {
+            li.classList.remove('current');
+          });
+          link.closest('li')?.classList.add('current');
+        }
+      }
+    };
+
+    // Attach to WordPress admin menu
+    const adminMenu = document.getElementById('adminmenu');
+    if (adminMenu) {
+      adminMenu.addEventListener('click', handleSubmenuClick);
+    }
+
+    return () => {
+      if (adminMenu) {
+        adminMenu.removeEventListener('click', handleSubmenuClick);
+      }
+    };
+  }, []);
+
 
   const processVoiceCommand = (text: string) => {
     const lower = text.toLowerCase();
@@ -281,7 +325,7 @@ function App() {
         <ChatInterface />
 
         {/* Phase 20: Remove redundant internal tabs if in WP, keep for standalone dev */}
-        {!window.apexConfig && (
+        {!(window as any).apexConfig && (
           <div className="mb-8">
             <div className="flex space-x-4 border-b border-white/10 pb-2 overflow-x-auto">
               {[
@@ -304,17 +348,16 @@ function App() {
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`pb-2 px-1 capitalize ${
-                    activeTab === tab
-                      ? "text-neon-green border-b-2 border-neon-green"
-                      : "text-gray-400 hover:text-white"
-                  }`}
+                  className={`pb-2 px-1 capitalize ${activeTab === tab
+                    ? "text-neon-green border-b-2 border-neon-green"
+                    : "text-gray-400 hover:text-white"
+                    }`}
                 >
                   {tab === "godmode"
                     ? "GOD MODE"
                     : tab === "developer"
-                    ? "API & DEV"
-                    : tab}
+                      ? "API & DEV"
+                      : tab}
                 </button>
               ))}
             </div>
@@ -452,11 +495,11 @@ function App() {
 
           {activeTab === "replay" && <ReplaySection />}
 
-          {activeTab === "forms" && <FormAnalytics />}
+          {activeTab === "forms" && <FormAnalytics range={dateRange} />}
 
-          {activeTab === "search" && <SearchAnalytics />}
+          {activeTab === "search" && <SearchAnalytics range={dateRange} />}
 
-          {activeTab === "seo" && <SEOManager />}
+          {activeTab === "seo" && <SEOManager range={dateRange} />}
 
           {activeTab === "automation" && <AutomationBuilder />}
 
